@@ -5,7 +5,7 @@
  * @copyright 2026 - Julian Garnier
  */
 
-export { cubicBezier } from './cubic-bezier/index.js';
+export { cubicBezier, getCubicBezierParams } from './cubic-bezier/index.js';
 export { steps } from './steps/index.js';
 export { linear } from './linear/index.js';
 export { irregular } from './irregular/index.js';

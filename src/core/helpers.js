@@ -34,8 +34,19 @@ export const toLowerCase = str => str.replace(lowerCaseRgx, '$1-$2').toLowerCase
  */
 export const stringStartsWith = (str, sub) => str.indexOf(sub) === 0;
 
+/** @type {Number|null} */
+let _virtualTime = null;
+
 // Note: Date.now is used instead of performance.now since it is precise enough for timings calculations, performs slightly faster and works in Node.js environement.
-export const now = Date.now;
+export const now = () => _virtualTime === null ? Date.now() : _virtualTime;
+
+/** @return {Number|null} */
+export const getVirtualTime = () => _virtualTime;
+
+/** @param {Number|null} time */
+export const setVirtualTime = time => {
+  _virtualTime = time;
+};
 
 // Types checkers
 

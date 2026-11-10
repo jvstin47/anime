@@ -33,8 +33,19 @@ const toLowerCase = str => str.replace(consts.lowerCaseRgx, '$1-$2').toLowerCase
  */
 const stringStartsWith = (str, sub) => str.indexOf(sub) === 0;
 
+/** @type {Number|null} */
+let _virtualTime = null;
+
 // Note: Date.now is used instead of performance.now since it is precise enough for timings calculations, performs slightly faster and works in Node.js environement.
-const now = Date.now;
+const now = () => _virtualTime === null ? Date.now() : _virtualTime;
+
+/** @return {Number|null} */
+const getVirtualTime = () => _virtualTime;
+
+/** @param {Number|null} time */
+const setVirtualTime = time => {
+  _virtualTime = time;
+};
 
 // Types checkers
 
@@ -271,6 +282,7 @@ exports.cos = cos;
 exports.exp = exp;
 exports.floor = floor;
 exports.forEachChildren = forEachChildren;
+exports.getVirtualTime = getVirtualTime;
 exports.isArr = isArr;
 exports.isCol = isCol;
 exports.isFnc = isFnc;
@@ -294,6 +306,7 @@ exports.parseNumber = parseNumber;
 exports.pow = pow;
 exports.removeChild = removeChild;
 exports.round = round;
+exports.setVirtualTime = setVirtualTime;
 exports.sin = sin;
 exports.snap = snap;
 exports.sqrt = sqrt;

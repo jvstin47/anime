@@ -192,6 +192,18 @@
       "require": "./dist/modules/adapters/three/index.cjs",
       "import": "./dist/modules/adapters/three/index.js",
       "default": "./dist/modules/adapters/three/index.cjs"
+    },
+    "./render": {
+      "types": "./dist/modules/render/index.d.ts",
+      "require": "./dist/modules/render/index.cjs",
+      "import": "./dist/modules/render/index.js",
+      "default": "./dist/modules/render/index.cjs"
+    },
+    "./studio": {
+      "types": "./dist/modules/studio/index.d.ts",
+      "require": "./dist/modules/studio/index.cjs",
+      "import": "./dist/modules/studio/index.js",
+      "default": "./dist/modules/studio/index.cjs"
     }
   },
   "peerDependencies": {

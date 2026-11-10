@@ -17,6 +17,7 @@ var parser = require('./eases/parser.cjs');
 
 
 exports.cubicBezier = index.cubicBezier;
+exports.getCubicBezierParams = index.getCubicBezierParams;
 exports.steps = index$1.steps;
 exports.linear = index$2.linear;
 exports.irregular = index$3.irregular;

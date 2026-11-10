@@ -1,6 +1,8 @@
 export function toLowerCase(str: string): string;
 export function stringStartsWith(str: string, sub: string): boolean;
-export const now: () => number;
+export function now(): number;
+export function getVirtualTime(): number | null;
+export function setVirtualTime(time: number | null): void;
 export const isArr: (arg: any) => arg is any[];
 export function isObj(a: any): a is Record<string, any>;
 export function isNum(a: any): a is number;

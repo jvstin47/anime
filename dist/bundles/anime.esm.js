@@ -894,8 +894,19 @@ const toLowerCase = str => str.replace(lowerCaseRgx, '$1-$2').toLowerCase();
  */
 const stringStartsWith = (str, sub) => str.indexOf(sub) === 0;
 
+/** @type {Number|null} */
+let _virtualTime = null;
+
 // Note: Date.now is used instead of performance.now since it is precise enough for timings calculations, performs slightly faster and works in Node.js environement.
-const now = Date.now;
+const now = () => _virtualTime === null ? Date.now() : _virtualTime;
+
+/** @return {Number|null} */
+const getVirtualTime = () => _virtualTime;
+
+/** @param {Number|null} time */
+const setVirtualTime = time => {
+  _virtualTime = time;
+};
 
 // Types checkers
 
@@ -2377,6 +2388,87 @@ class Engine extends Clock {
     return this.wake();
   }
 
+  /** @return {Boolean} */
+  get isVirtual() {
+    return getVirtualTime() !== null;
+  }
+
+  /** @return {Number|null} */
+  get virtualTime() {
+    return getVirtualTime();
+  }
+
+  /**
+   * Switches the engine to a deterministic virtual clock starting at `startTime` (ms).
+   * Disables the automatic RAF/setImmediate loop until `useRealClock()` is called.
+   *
+   * @param  {Number} [startTime=0]
+   * @return {this}
+   */
+  useVirtualClock(startTime = 0) {
+    if (this.reqId) killEngine();
+    this.useDefaultMainLoop = false;
+    setVirtualTime(startTime);
+    this._currentTime = startTime;
+    this._lastTickTime = startTime;
+    this._startTime = startTime;
+    this._lastTime = startTime;
+    forEachChildren(this, (/** @type {Tickable} */child) => child.resetTime());
+    return this;
+  }
+
+  /**
+   * Restores the engine to the wall-clock `Date.now()` loop and re-anchors active tickables.
+   *
+   * @return {this}
+   */
+  useRealClock() {
+    setVirtualTime(null);
+    const time = now();
+    this._currentTime = time;
+    this._lastTickTime = time;
+    this._lastTime = time;
+    this.useDefaultMainLoop = true;
+    forEachChildren(this, (/** @type {Tickable} */child) => child.resetTime());
+    if (this._head) this.wake();
+    return this;
+  }
+
+  /**
+   * Advances the virtual clock by `deltaMs` milliseconds and updates all active tickables.
+   * Automatically switches to virtual clock mode at `0` if currently on real-time mode.
+   *
+   * @param  {Number} [deltaMs=16.666666666666668]
+   * @param  {Boolean} [force=true]
+   * @return {this}
+   */
+  step(deltaMs = K / 60, force = true) {
+    if (getVirtualTime() === null) this.useVirtualClock(0);
+    const nextTime = /** @type {Number} */(getVirtualTime()) + deltaMs;
+    setVirtualTime(nextTime);
+    if (force) this._lastTickTime = nextTime - this._frameDuration;
+    this.update();
+    return this;
+  }
+
+  /**
+   * Jumps the virtual clock to `timeMs` milliseconds and updates all active tickables.
+   *
+   * @param  {Number} timeMs
+   * @param  {Boolean} [force=true]
+   * @return {this}
+   */
+  setTime(timeMs, force = true) {
+    if (getVirtualTime() === null) {
+      this.useVirtualClock(timeMs);
+    } else {
+      setVirtualTime(timeMs);
+    }
+    if (force) this._lastTickTime = timeMs - this._frameDuration;
+    this.update();
+    return this;
+  }
+
   // Getter and setter for speed
   get speed() {
     return this._speed * (globals.timeScale === 1 ? 1 : K);
@@ -3122,8 +3214,8 @@ class Timer extends Clock {
         this._running = true;
       }
       this.resetTime();
-      // Forces the timer to advance by at least one frame when the next tick occurs
-      this._startTime -= 12;
+      // Forces the timer to advance by at least one frame when the next tick occurs (real-time RAF only)
+      if (getVirtualTime() === null) this._startTime -= 12;
       engine.wake();
     }
     return this;
@@ -7651,6 +7743,17 @@ const binarySubdivide = (aX, mX1, mX2) => {
   return currentT;
 };
 
+/** @type {WeakMap<EasingFunction, [Number, Number, Number, Number]>} */
+const cubicBezierPoints = new WeakMap();
+
+/**
+ * Returns the `[x1, y1, x2, y2]` control points if `fn` was created by `cubicBezier()`.
+ *
+ * @param  {EasingFunction|any} fn
+ * @return {[Number, Number, Number, Number]|null}
+ */
+const getCubicBezierParams = fn => fn ? (cubicBezierPoints.get(fn) || null) : null;
+
 /**
  * @param  {Number} [mX1] The x coordinate of the first point
  * @param  {Number} [mY1] The y coordinate of the first point
@@ -7659,9 +7762,13 @@ const binarySubdivide = (aX, mX1, mX2) => {
  * @return {EasingFunction}
  */
 
-const cubicBezier = (mX1 = 0.5, mY1 = 0.0, mX2 = 0.5, mY2 = 1.0) => (mX1 === mY1 && mX2 === mY2) ? none :
-  t => t === 0 || t === 1 ? t :
-  calcBezier(binarySubdivide(t, mX1, mX2), mY1, mY2);
+const cubicBezier = (mX1 = 0.5, mY1 = 0.0, mX2 = 0.5, mY2 = 1.0) => {
+  if (mX1 === mY1 && mX2 === mY2) return none;
+  /** @type {EasingFunction} */
+  const fn = t => t === 0 || t === 1 ? t : calcBezier(binarySubdivide(t, mX1, mX2), mY1, mY2);
+  cubicBezierPoints.set(fn, [mX1, mY1, mX2, mY2]);
+  return fn;
+};
 
 
 
@@ -7749,6 +7856,7 @@ var index$3 = /*#__PURE__*/Object.freeze({
   createSpring: createSpring,
   cubicBezier: cubicBezier,
   eases: eases,
+  getCubicBezierParams: getCubicBezierParams,
   irregular: irregular,
   linear: linear,
   spring: spring,
@@ -9946,17 +10054,47 @@ const damp = /** @type {typeof numberUtils.damp & ChainedDamp} */(makeChainable(
  * @return   {Number} A random number between min and max
  */
 
+/** @type {RandomNumberGenerator|null} */
+let _seededRandom = null;
+let _seed = 0;
+
 /**
  * Generates a random number between min and max (inclusive) with optional decimal precision
  *
  * @type {RandomNumberGenerator}
  */
 const random = (min = 0, max = 1, decimalLength = 0) => {
+  if (_seededRandom) return _seededRandom(min, max, decimalLength);
   const m = 10 ** decimalLength;
   return Math.floor((Math.random() * (max - min + (1 / m)) + min) * m) / m;
 };
 
-let _seed = 0;
+/**
+ * Sets a deterministic seed for `random()` and resets the internal `createSeededRandom()` counter.
+ * Pass `null` or call `resetRandomSeed()` to restore default `Math.random()` behavior.
+ *
+ * @param  {Number|null} [seed=0]
+ * @return {void}
+ */
+const setRandomSeed = (seed = 0) => {
+  if (seed === null) {
+    _seededRandom = null;
+    _seed = 0;
+    return;
+  }
+  _seed = seed;
+  _seededRandom = createSeededRandom(seed);
+};
+
+/**
+ * Restores default non-deterministic `Math.random()` behavior for `random()`.
+ *
+ * @return {void}
+ */
+const resetRandomSeed = () => {
+  _seededRandom = null;
+  _seed = 0;
+};
 
 /**
  * Creates a seeded pseudorandom number generator function
@@ -10267,9 +10405,11 @@ var index$2 = /*#__PURE__*/Object.freeze({
   randomPick: randomPick,
   remove: remove,
   removeChild: removeChild,
+  resetRandomSeed: resetRandomSeed,
   round: round,
   roundPad: roundPad,
   set: set,
+  setRandomSeed: setRandomSeed,
   shuffle: shuffle,
   snap: snap,
   stagger: stagger,
@@ -11258,4 +11398,4 @@ var index = /*#__PURE__*/Object.freeze({
   splitText: splitText
 });
 
-export { registerTargets as $, Animatable, AutoLayout, Draggable, JSAnimation, Scope, ScrollObserver, Spring, TextSplitter, Timeline, Timer, WAAPIAnimation, addChild, animate, clamp, cleanInlineStyles, createAnimatable, createDraggable, createDrawable, createLayout, createMotionPath, createScope, createSeededRandom, createSpring, createTimeline, createTimer, cubicBezier, damp, degToRad, eases, index$3 as easings, engine, forEachChildren, get, globals, irregular, keepTime, lerp, linear, mapRange, morphTo, onScroll, padEnd, padStart, radToDeg, random, randomPick, remove, removeChild, round, roundPad, scrambleText, scrollContainers, set, shuffle, snap, split, splitText, spring, stagger, steps, index$1 as svg, sync, index as text, index$2 as utils, waapi, wrap };
+export { registerTargets as $, Animatable, AutoLayout, Draggable, JSAnimation, Scope, ScrollObserver, Spring, TextSplitter, Timeline, Timer, WAAPIAnimation, addChild, animate, clamp, cleanInlineStyles, createAnimatable, createDraggable, createDrawable, createLayout, createMotionPath, createScope, createSeededRandom, createSpring, createTimeline, createTimer, cubicBezier, damp, degToRad, eases, index$3 as easings, engine, forEachChildren, get, getCubicBezierParams, globals, irregular, keepTime, lerp, linear, mapRange, morphTo, onScroll, padEnd, padStart, radToDeg, random, randomPick, remove, removeChild, resetRandomSeed, round, roundPad, scrambleText, scrollContainers, set, setRandomSeed, shuffle, snap, split, splitText, spring, stagger, steps, index$1 as svg, sync, index as text, index$2 as utils, waapi, wrap };

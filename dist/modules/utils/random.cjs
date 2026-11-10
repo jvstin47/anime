@@ -17,17 +17,47 @@
  * @return   {Number} A random number between min and max
  */
 
+/** @type {RandomNumberGenerator|null} */
+let _seededRandom = null;
+let _seed = 0;
+
 /**
  * Generates a random number between min and max (inclusive) with optional decimal precision
  *
  * @type {RandomNumberGenerator}
  */
 const random = (min = 0, max = 1, decimalLength = 0) => {
+  if (_seededRandom) return _seededRandom(min, max, decimalLength);
   const m = 10 ** decimalLength;
   return Math.floor((Math.random() * (max - min + (1 / m)) + min) * m) / m;
 };
 
-let _seed = 0;
+/**
+ * Sets a deterministic seed for `random()` and resets the internal `createSeededRandom()` counter.
+ * Pass `null` or call `resetRandomSeed()` to restore default `Math.random()` behavior.
+ *
+ * @param  {Number|null} [seed=0]
+ * @return {void}
+ */
+const setRandomSeed = (seed = 0) => {
+  if (seed === null) {
+    _seededRandom = null;
+    _seed = 0;
+    return;
+  }
+  _seed = seed;
+  _seededRandom = createSeededRandom(seed);
+};
+
+/**
+ * Restores default non-deterministic `Math.random()` behavior for `random()`.
+ *
+ * @return {void}
+ */
+const resetRandomSeed = () => {
+  _seededRandom = null;
+  _seed = 0;
+};
 
 /**
  * Creates a seeded pseudorandom number generator function
@@ -75,4 +105,6 @@ const shuffle = (items, rnd = random) => {
 exports.createSeededRandom = createSeededRandom;
 exports.random = random;
 exports.randomPick = randomPick;
+exports.resetRandomSeed = resetRandomSeed;
+exports.setRandomSeed = setRandomSeed;
 exports.shuffle = shuffle;

@@ -31,8 +31,19 @@ const toLowerCase = str => str.replace(lowerCaseRgx, '$1-$2').toLowerCase();
  */
 const stringStartsWith = (str, sub) => str.indexOf(sub) === 0;
 
+/** @type {Number|null} */
+let _virtualTime = null;
+
 // Note: Date.now is used instead of performance.now since it is precise enough for timings calculations, performs slightly faster and works in Node.js environement.
-const now = Date.now;
+const now = () => _virtualTime === null ? Date.now() : _virtualTime;
+
+/** @return {Number|null} */
+const getVirtualTime = () => _virtualTime;
+
+/** @param {Number|null} time */
+const setVirtualTime = time => {
+  _virtualTime = time;
+};
 
 // Types checkers
 
@@ -255,4 +266,4 @@ const addChild = (parent, child, sortMethod, prevProp = '_prev', nextProp = '_ne
   child[nextProp] = next;
 };
 
-export { PI, _round, abs, addChild, asin, atan2, ceil, clamp, clampInfinity, cloneArray, cos, exp, floor, forEachChildren, isArr, isCol, isFnc, isHex, isHsl, isKey, isNil, isNum, isObj, isRgb, isStr, isSvg, isUnd, isValidSVGAttribute, lerp, max, mergeObjects, normalizeTime, now, parseNumber, pow, removeChild, round, sin, snap, sqrt, stringStartsWith, toLowerCase };
+export { PI, _round, abs, addChild, asin, atan2, ceil, clamp, clampInfinity, cloneArray, cos, exp, floor, forEachChildren, getVirtualTime, isArr, isCol, isFnc, isHex, isHsl, isKey, isNil, isNum, isObj, isRgb, isStr, isSvg, isUnd, isValidSVGAttribute, lerp, max, mergeObjects, normalizeTime, now, parseNumber, pow, removeChild, round, setVirtualTime, sin, snap, sqrt, stringStartsWith, toLowerCase };

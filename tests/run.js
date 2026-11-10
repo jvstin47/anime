@@ -28,6 +28,8 @@ import './suites/transforms.test.js';
 import './suites/colors.test.js';
 import './suites/threejs.test.js';
 import './suites/eases.test.js';
+import './suites/render.test.js';
+import './suites/studio.test.js';
 import './suites/leaks.test.js';
 
 mocha.checkLeaks();

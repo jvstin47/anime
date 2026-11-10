@@ -6,7 +6,7 @@
  */
 
 export { clamp, damp, degToRad, lerp, mapRange, padEnd, padStart, radToDeg, round, roundPad, snap, wrap } from './chainable.js';
-export { createSeededRandom, random, randomPick, shuffle } from './random.js';
+export { createSeededRandom, random, randomPick, resetRandomSeed, setRandomSeed, shuffle } from './random.js';
 export { keepTime, sync } from './time.js';
 export { get, remove, set } from './target.js';
 export { stagger } from './stagger.js';

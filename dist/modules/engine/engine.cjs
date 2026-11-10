@@ -97,6 +97,87 @@ class Engine extends clock.Clock {
     return this.wake();
   }
 
+  /** @return {Boolean} */
+  get isVirtual() {
+    return helpers.getVirtualTime() !== null;
+  }
+
+  /** @return {Number|null} */
+  get virtualTime() {
+    return helpers.getVirtualTime();
+  }
+
+  /**
+   * Switches the engine to a deterministic virtual clock starting at `startTime` (ms).
+   * Disables the automatic RAF/setImmediate loop until `useRealClock()` is called.
+   *
+   * @param  {Number} [startTime=0]
+   * @return {this}
+   */
+  useVirtualClock(startTime = 0) {
+    if (this.reqId) killEngine();
+    this.useDefaultMainLoop = false;
+    helpers.setVirtualTime(startTime);
+    this._currentTime = startTime;
+    this._lastTickTime = startTime;
+    this._startTime = startTime;
+    this._lastTime = startTime;
+    helpers.forEachChildren(this, (/** @type {Tickable} */child) => child.resetTime());
+    return this;
+  }
+
+  /**
+   * Restores the engine to the wall-clock `Date.now()` loop and re-anchors active tickables.
+   *
+   * @return {this}
+   */
+  useRealClock() {
+    helpers.setVirtualTime(null);
+    const time = helpers.now();
+    this._currentTime = time;
+    this._lastTickTime = time;
+    this._lastTime = time;
+    this.useDefaultMainLoop = true;
+    helpers.forEachChildren(this, (/** @type {Tickable} */child) => child.resetTime());
+    if (this._head) this.wake();
+    return this;
+  }
+
+  /**
+   * Advances the virtual clock by `deltaMs` milliseconds and updates all active tickables.
+   * Automatically switches to virtual clock mode at `0` if currently on real-time mode.
+   *
+   * @param  {Number} [deltaMs=16.666666666666668]
+   * @param  {Boolean} [force=true]
+   * @return {this}
+   */
+  step(deltaMs = consts.K / 60, force = true) {
+    if (helpers.getVirtualTime() === null) this.useVirtualClock(0);
+    const nextTime = /** @type {Number} */(helpers.getVirtualTime()) + deltaMs;
+    helpers.setVirtualTime(nextTime);
+    if (force) this._lastTickTime = nextTime - this._frameDuration;
+    this.update();
+    return this;
+  }
+
+  /**
+   * Jumps the virtual clock to `timeMs` milliseconds and updates all active tickables.
+   *
+   * @param  {Number} timeMs
+   * @param  {Boolean} [force=true]
+   * @return {this}
+   */
+  setTime(timeMs, force = true) {
+    if (helpers.getVirtualTime() === null) {
+      this.useVirtualClock(timeMs);
+    } else {
+      helpers.setVirtualTime(timeMs);
+    }
+    if (force) this._lastTickTime = timeMs - this._frameDuration;
+    this.update();
+    return this;
+  }
+
   // Getter and setter for speed
   get speed() {
     return this._speed * (globals.globals.timeScale === 1 ? 1 : consts.K);

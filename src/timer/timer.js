@@ -8,6 +8,7 @@ import {
 
 import {
   now,
+  getVirtualTime,
   isUnd,
   addChild,
   forEachChildren,
@@ -384,8 +385,8 @@ export class Timer extends Clock {
         this._running = true;
       }
       this.resetTime();
-      // Forces the timer to advance by at least one frame when the next tick occurs
-      this._startTime -= 12;
+      // Forces the timer to advance by at least one frame when the next tick occurs (real-time RAF only)
+      if (getVirtualTime() === null) this._startTime -= 12;
       engine.wake();
     }
     return this;

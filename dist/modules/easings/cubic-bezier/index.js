@@ -47,6 +47,17 @@ const binarySubdivide = (aX, mX1, mX2) => {
   return currentT;
 };
 
+/** @type {WeakMap<EasingFunction, [Number, Number, Number, Number]>} */
+const cubicBezierPoints = new WeakMap();
+
+/**
+ * Returns the `[x1, y1, x2, y2]` control points if `fn` was created by `cubicBezier()`.
+ *
+ * @param  {EasingFunction|any} fn
+ * @return {[Number, Number, Number, Number]|null}
+ */
+const getCubicBezierParams = fn => fn ? (cubicBezierPoints.get(fn) || null) : null;
+
 /**
  * @param  {Number} [mX1] The x coordinate of the first point
  * @param  {Number} [mY1] The y coordinate of the first point
@@ -55,8 +66,12 @@ const binarySubdivide = (aX, mX1, mX2) => {
  * @return {EasingFunction}
  */
 
-const cubicBezier = (mX1 = 0.5, mY1 = 0.0, mX2 = 0.5, mY2 = 1.0) => (mX1 === mY1 && mX2 === mY2) ? none :
-  t => t === 0 || t === 1 ? t :
-  calcBezier(binarySubdivide(t, mX1, mX2), mY1, mY2);
+const cubicBezier = (mX1 = 0.5, mY1 = 0.0, mX2 = 0.5, mY2 = 1.0) => {
+  if (mX1 === mY1 && mX2 === mY2) return none;
+  /** @type {EasingFunction} */
+  const fn = t => t === 0 || t === 1 ? t : calcBezier(binarySubdivide(t, mX1, mX2), mY1, mY2);
+  cubicBezierPoints.set(fn, [mX1, mY1, mX2, mY2]);
+  return fn;
+};
 
-export { cubicBezier };
+export { cubicBezier, getCubicBezierParams };
