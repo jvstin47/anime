@@ -4966,6 +4966,17 @@ var numberImports = /*#__PURE__*/Object.freeze({
 
 const maxSpringParamValue = K * 10;
 
+/** @type {WeakMap<EasingFunction, Spring>} */
+const springByEase = new WeakMap();
+
+/**
+ * Returns the `Spring` instance that owns `easeFn`, if any.
+ *
+ * @param  {EasingFunction|any} easeFn
+ * @return {Spring|null}
+ */
+const getSpringFromEase = easeFn => easeFn ? (springByEase.get(easeFn) || null) : null;
+
 class Spring {
   /**
    * @param {SpringParams} [parameters]
@@ -5011,6 +5022,7 @@ class Spring {
       }
       return t === 0 || t === 1 ? t : this.solve(t * this.solverDuration);
     };
+    springByEase.set(this.ease, this);
   }
 
   /** @type {EasingFunction} */
@@ -7857,6 +7869,7 @@ var index$3 = /*#__PURE__*/Object.freeze({
   cubicBezier: cubicBezier,
   eases: eases,
   getCubicBezierParams: getCubicBezierParams,
+  getSpringFromEase: getSpringFromEase,
   irregular: irregular,
   linear: linear,
   spring: spring,
@@ -11398,4 +11411,4 @@ var index = /*#__PURE__*/Object.freeze({
   splitText: splitText
 });
 
-export { registerTargets as $, Animatable, AutoLayout, Draggable, JSAnimation, Scope, ScrollObserver, Spring, TextSplitter, Timeline, Timer, WAAPIAnimation, addChild, animate, clamp, cleanInlineStyles, createAnimatable, createDraggable, createDrawable, createLayout, createMotionPath, createScope, createSeededRandom, createSpring, createTimeline, createTimer, cubicBezier, damp, degToRad, eases, index$3 as easings, engine, forEachChildren, get, getCubicBezierParams, globals, irregular, keepTime, lerp, linear, mapRange, morphTo, onScroll, padEnd, padStart, radToDeg, random, randomPick, remove, removeChild, resetRandomSeed, round, roundPad, scrambleText, scrollContainers, set, setRandomSeed, shuffle, snap, split, splitText, spring, stagger, steps, index$1 as svg, sync, index as text, index$2 as utils, waapi, wrap };
+export { registerTargets as $, Animatable, AutoLayout, Draggable, JSAnimation, Scope, ScrollObserver, Spring, TextSplitter, Timeline, Timer, WAAPIAnimation, addChild, animate, clamp, cleanInlineStyles, createAnimatable, createDraggable, createDrawable, createLayout, createMotionPath, createScope, createSeededRandom, createSpring, createTimeline, createTimer, cubicBezier, damp, degToRad, eases, index$3 as easings, engine, forEachChildren, get, getCubicBezierParams, getSpringFromEase, globals, irregular, keepTime, lerp, linear, mapRange, morphTo, onScroll, padEnd, padStart, radToDeg, random, randomPick, remove, removeChild, resetRandomSeed, round, roundPad, scrambleText, scrollContainers, set, setRandomSeed, shuffle, snap, split, splitText, spring, stagger, steps, index$1 as svg, sync, index as text, index$2 as utils, waapi, wrap };

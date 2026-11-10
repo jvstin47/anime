@@ -4972,6 +4972,17 @@
 
   const maxSpringParamValue = K * 10;
 
+  /** @type {WeakMap<EasingFunction, Spring>} */
+  const springByEase = new WeakMap();
+
+  /**
+   * Returns the `Spring` instance that owns `easeFn`, if any.
+   *
+   * @param  {EasingFunction|any} easeFn
+   * @return {Spring|null}
+   */
+  const getSpringFromEase = easeFn => easeFn ? (springByEase.get(easeFn) || null) : null;
+
   class Spring {
     /**
      * @param {SpringParams} [parameters]
@@ -5017,6 +5028,7 @@
         }
         return t === 0 || t === 1 ? t : this.solve(t * this.solverDuration);
       };
+      springByEase.set(this.ease, this);
     }
 
     /** @type {EasingFunction} */
@@ -7863,6 +7875,7 @@
     cubicBezier: cubicBezier,
     eases: eases,
     getCubicBezierParams: getCubicBezierParams,
+    getSpringFromEase: getSpringFromEase,
     irregular: irregular,
     linear: linear,
     spring: spring,
@@ -11439,6 +11452,7 @@
   exports.forEachChildren = forEachChildren;
   exports.get = get;
   exports.getCubicBezierParams = getCubicBezierParams;
+  exports.getSpringFromEase = getSpringFromEase;
   exports.globals = globals;
   exports.irregular = irregular;
   exports.keepTime = keepTime;

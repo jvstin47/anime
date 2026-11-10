@@ -31,6 +31,17 @@ import { setValue } from '../../core/values.js';
 
 const maxSpringParamValue = K * 10;
 
+/** @type {WeakMap<EasingFunction, Spring>} */
+const springByEase = new WeakMap();
+
+/**
+ * Returns the `Spring` instance that owns `easeFn`, if any.
+ *
+ * @param  {EasingFunction|any} easeFn
+ * @return {Spring|null}
+ */
+const getSpringFromEase = easeFn => easeFn ? (springByEase.get(easeFn) || null) : null;
+
 class Spring {
   /**
    * @param {SpringParams} [parameters]
@@ -76,6 +87,7 @@ class Spring {
       }
       return t === 0 || t === 1 ? t : this.solve(t * this.solverDuration);
     };
+    springByEase.set(this.ease, this);
   }
 
   /** @type {EasingFunction} */
@@ -248,4 +260,4 @@ const createSpring = (parameters) => {
   return new Spring(parameters);
 };
 
-export { Spring, createSpring, spring };
+export { Spring, createSpring, getSpringFromEase, spring };

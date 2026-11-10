@@ -13,622 +13,35 @@ var engine = require('../engine/engine.cjs');
 var session = require('../render/session.cjs');
 var easingsBridge = require('./easings-bridge.cjs');
 var codegen = require('./codegen.cjs');
+var icons = require('./icons.cjs');
+var styles = require('./styles.cjs');
 
 /**
- * @import { StudioStore, StudioEntry, StudioGroupTrack, StudioTweenTrack } from './store.js'
+ * @import {
+ *   StudioStore,
+ *   StudioEntry,
+ *   StudioLayerNode,
+ *   StudioGroupTrack,
+ *   StudioTweenTrack,
+ *   StudioPropertySummary,
+ * } from './store.js'
  */
 
-const SPECTRUM = [
-  '#FF4B4B',
-  '#FF8F42',
-  '#F6FF56',
-  '#A4FF4F',
-  '#18FF74',
-  '#3CFFEC',
-  '#61C3FF',
-  '#8453E3',
-  '#FB89FB',
-];
-
-const STUDIO_CSS = `
-:host {
-  all: initial;
-  position: fixed;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  z-index: 2147483640;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
-  font-size: 11px;
-  line-height: 1.4;
-  color: #F6F4F2;
-  --bg-0: #131212;
-  --bg-1: #1B1919;
-  --bg-2: #242222;
-  --bg-3: #2E2C2C;
-  --border: rgba(246, 244, 242, 0.1);
-  --border-strong: rgba(246, 244, 242, 0.22);
-  --ink: #F6F4F2;
-  --muted: rgba(246, 244, 242, 0.56);
-  --accent: #61C3FF;
-  --green: #18FF74;
-  --orange: #FF8F42;
-  --red: #FF4B4B;
-  --yellow: #F6FF56;
-  pointer-events: none;
-}
-
-* { box-sizing: border-box; }
-
-.overlay-layer {
-  position: fixed;
-  inset: 0;
-  pointer-events: none;
-  z-index: 1;
-}
-
-.highlight-box {
-  position: fixed;
-  border: 1.5px solid #61C3FF;
-  background: rgba(97, 195, 255, 0.08);
-  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.45);
-  border-radius: 2px;
-  pointer-events: none;
-}
-
-.highlight-tag {
-  position: absolute;
-  top: -18px;
-  left: -1px;
-  background: #61C3FF;
-  color: #131212;
-  font-weight: 700;
-  font-size: 10px;
-  padding: 1px 5px;
-  border-radius: 2px;
-  white-space: nowrap;
-}
-
-.dock {
-  pointer-events: auto;
-  position: relative;
-  z-index: 2;
-  background: var(--bg-0);
-  border-top: 1px solid var(--border-strong);
-  box-shadow: 0 -12px 38px rgba(0, 0, 0, 0.6);
-  display: flex;
-  flex-direction: column;
-  width: 100%;
-  user-select: none;
-}
-
-.dock.collapsed .body { display: none; }
-.dock.collapsed .resize-handle { display: none; }
-
-.resize-handle {
-  height: 5px;
-  cursor: ns-resize;
-  background: transparent;
-  transition: background 0.15s;
-}
-.resize-handle:hover { background: var(--accent); }
-
-.toolbar {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 10px;
-  background: var(--bg-1);
-  border-bottom: 1px solid var(--border);
-  flex-wrap: wrap;
-}
-
-.brand {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  color: var(--ink);
-  padding-right: 6px;
-  border-right: 1px solid var(--border);
-}
-
-.brand-dots {
-  display: inline-flex;
-  gap: 2px;
-}
-.brand-dots span {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-}
-
-select, input[type="number"], input[type="text"] {
-  background: var(--bg-2);
-  color: var(--ink);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  padding: 3px 6px;
-  font-family: inherit;
-  font-size: 11px;
-  outline: none;
-}
-select:focus, input:focus { border-color: var(--accent); }
-
-button {
-  background: var(--bg-2);
-  color: var(--ink);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  padding: 3px 7px;
-  font-family: inherit;
-  font-size: 11px;
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  transition: background 0.12s, border-color 0.12s, color 0.12s;
-}
-button:hover { background: var(--bg-3); border-color: var(--border-strong); }
-button.active {
-  background: rgba(97, 195, 255, 0.16);
-  border-color: var(--accent);
-  color: var(--accent);
-}
-button.primary {
-  background: var(--green);
-  border-color: var(--green);
-  color: #131212;
-  font-weight: 700;
-}
-button.primary:hover { filter: brightness(1.08); }
-button:disabled { opacity: 0.45; cursor: not-allowed; }
-
-.btn-group {
-  display: inline-flex;
-  gap: 3px;
-  align-items: center;
-}
-
-.timecode {
-  background: var(--bg-0);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  padding: 3px 8px;
-  color: var(--yellow);
-  font-variant-numeric: tabular-nums;
-  min-width: 154px;
-  text-align: center;
-}
-
-.spacer { flex: 1; }
-
-.body {
-  display: grid;
-  grid-template-columns: minmax(340px, 1.45fr) minmax(290px, 1fr);
-  height: var(--studio-height, 290px);
-  overflow: hidden;
-}
-
-.timeline-pane {
-  display: flex;
-  flex-direction: column;
-  border-right: 1px solid var(--border);
-  overflow: hidden;
-  background: var(--bg-0);
-}
-
-.timeline-subbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 4px 10px;
-  background: var(--bg-1);
-  border-bottom: 1px solid var(--border);
-  color: var(--muted);
-}
-
-.timeline-scroll {
-  flex: 1;
-  overflow: auto;
-  position: relative;
-}
-
-.timeline-grid {
-  display: grid;
-  grid-template-columns: 185px 1fr;
-  min-width: 560px;
-  position: relative;
-}
-
-.ruler-corner {
-  position: sticky;
-  top: 0;
-  left: 0;
-  z-index: 6;
-  background: var(--bg-1);
-  border-bottom: 1px solid var(--border);
-  border-right: 1px solid var(--border);
-  padding: 5px 8px;
-  color: var(--muted);
-  font-size: 10px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.ruler-track {
-  position: sticky;
-  top: 0;
-  z-index: 5;
-  height: 26px;
-  background: var(--bg-1);
-  border-bottom: 1px solid var(--border);
-  cursor: ew-resize;
-  overflow: visible;
-}
-
-.ruler-tick {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  border-left: 1px solid rgba(246, 244, 242, 0.14);
-  font-size: 9px;
-  color: var(--muted);
-  padding-left: 3px;
-  padding-top: 2px;
-  pointer-events: none;
-}
-
-.ruler-label {
-  position: absolute;
-  bottom: 2px;
-  transform: translateX(-50%);
-  background: #8453E3;
-  color: #fff;
-  font-size: 9px;
-  padding: 0 4px;
-  border-radius: 2px;
-  pointer-events: none;
-  white-space: nowrap;
-}
-
-.ruler-call {
-  position: absolute;
-  bottom: 2px;
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--orange);
-  transform: translateX(-50%);
-  pointer-events: none;
-}
-
-.playhead-line {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  width: 1.5px;
-  background: var(--red);
-  z-index: 7;
-  pointer-events: none;
-  box-shadow: 0 0 8px rgba(255, 75, 75, 0.65);
-}
-
-.playhead-head {
-  position: absolute;
-  top: 0;
-  left: -5px;
-  width: 11px;
-  height: 11px;
-  background: var(--red);
-  clip-path: polygon(0 0, 100% 0, 50% 100%);
-}
-
-.track-label-cell {
-  position: sticky;
-  left: 0;
-  z-index: 4;
-  background: var(--bg-1);
-  border-right: 1px solid var(--border);
-  border-bottom: 1px solid rgba(246, 244, 242, 0.05);
-  padding: 4px 8px;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  overflow: hidden;
-  white-space: nowrap;
-  cursor: pointer;
-}
-.track-label-cell.selected { background: rgba(97, 195, 255, 0.12); }
-.track-label-cell.sub { padding-left: 20px; background: var(--bg-0); color: var(--muted); }
-.track-label-cell.sub.selected { background: rgba(97, 195, 255, 0.1); color: var(--ink); }
-
-.track-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  flex-shrink: 0;
-}
-
-.track-name {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  flex: 1;
-}
-
-.track-prop-badge {
-  font-size: 9px;
-  color: var(--muted);
-  background: var(--bg-2);
-  padding: 0 4px;
-  border-radius: 3px;
-}
-
-.track-lane-cell {
-  position: relative;
-  height: 26px;
-  border-bottom: 1px solid rgba(246, 244, 242, 0.05);
-  background: var(--bg-0);
-}
-.track-lane-cell.sub { height: 22px; background: rgba(255, 255, 255, 0.01); }
-
-.bar-wrap {
-  position: absolute;
-  top: 3px;
-  bottom: 3px;
-  display: flex;
-  align-items: stretch;
-  cursor: grab;
-}
-.bar-wrap:active { cursor: grabbing; }
-
-.bar-delay {
-  background: repeating-linear-gradient(
-    -45deg,
-    rgba(246, 244, 242, 0.15),
-    rgba(246, 244, 242, 0.15) 3px,
-    transparent 3px,
-    transparent 6px
-  );
-  border-radius: 3px 0 0 3px;
-  border: 1px dashed rgba(246, 244, 242, 0.25);
-  border-right: none;
-}
-
-.bar-body {
-  position: relative;
-  flex: 1;
-  min-width: 6px;
-  border-radius: 3px;
-  border: 1px solid rgba(255, 255, 255, 0.22);
-  overflow: hidden;
-  display: flex;
-  align-items: center;
-}
-.bar-wrap.selected .bar-body {
-  outline: 1.5px solid #F6F4F2;
-  outline-offset: 1px;
-}
-
-.bar-spark {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  opacity: 0.45;
-  pointer-events: none;
-}
-
-.bar-text {
-  position: relative;
-  z-index: 1;
-  font-size: 9px;
-  font-weight: 700;
-  color: #131212;
-  padding: 0 5px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.bar-resize {
-  position: absolute;
-  right: 0;
-  top: 0;
-  bottom: 0;
-  width: 6px;
-  cursor: ew-resize;
-  background: rgba(0, 0, 0, 0.25);
-}
-.bar-resize:hover { background: #F6F4F2; }
-
-.inspector-pane {
-  display: flex;
-  flex-direction: column;
-  background: var(--bg-1);
-  overflow: hidden;
-}
-
-.tabs {
-  display: flex;
-  border-bottom: 1px solid var(--border);
-  background: var(--bg-1);
-}
-.tab {
-  flex: 1;
-  border: none;
-  border-radius: 0;
-  border-bottom: 2px solid transparent;
-  background: transparent;
-  padding: 6px 8px;
-  justify-content: center;
-  color: var(--muted);
-}
-.tab.active {
-  color: var(--ink);
-  border-bottom-color: var(--accent);
-  background: rgba(97, 195, 255, 0.06);
-}
-
-.inspector-body {
-  flex: 1;
-  overflow: auto;
-  padding: 10px 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.form-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 6px;
-}
-.field {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-}
-.field label {
-  font-size: 9px;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--muted);
-}
-
-.preset-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-}
-.preset-row button {
-  font-size: 10px;
-  padding: 2px 6px;
-}
-
-.curve-box {
-  background: var(--bg-0);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 6px;
-  display: flex;
-  gap: 10px;
-  align-items: center;
-}
-.curve-svg {
-  width: 150px;
-  height: 150px;
-  flex-shrink: 0;
-  overflow: visible;
-  touch-action: none;
-}
-.bezier-handle {
-  cursor: grab;
-}
-.bezier-handle:active { cursor: grabbing; }
-
-.curve-meta {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  min-width: 0;
-}
-
-.slider-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 10px;
-}
-.slider-row span:first-child { width: 58px; color: var(--muted); }
-.slider-row input[type="range"] { flex: 1; accent-color: var(--accent); }
-.slider-row span:last-child { width: 38px; text-align: right; color: var(--ink); }
-
-.stagger-list {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-.stagger-row {
-  display: grid;
-  grid-template-columns: 90px 1fr 48px;
-  align-items: center;
-  gap: 6px;
-  font-size: 10px;
-}
-.stagger-bar-bg {
-  height: 10px;
-  background: var(--bg-0);
-  border-radius: 3px;
-  position: relative;
-  overflow: hidden;
-}
-.stagger-bar-fill {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  border-radius: 3px;
-}
-
-.filmstrip {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 5px;
-}
-.film-thumb {
-  background: var(--bg-0);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  overflow: hidden;
-  cursor: pointer;
-  display: flex;
-  flex-direction: column;
-}
-.film-thumb:hover { border-color: var(--accent); }
-.film-thumb img { width: 100%; aspect-ratio: 16/9; object-fit: contain; display: block; background: #0d0c0c; }
-.film-thumb span { font-size: 9px; padding: 2px 4px; color: var(--muted); text-align: center; }
-
-.code-block {
-  background: var(--bg-0);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 8px;
-  margin: 0;
-  white-space: pre-wrap;
-  word-break: break-word;
-  font-size: 10.5px;
-  color: #A4FF4F;
-  user-select: text;
-  max-height: 190px;
-  overflow: auto;
-}
-
-.empty-state {
-  padding: 20px;
-  color: var(--muted);
-  text-align: center;
-}
-
-.status-pill {
-  font-size: 10px;
-  color: var(--turquoise, #3CFFEC);
-  background: rgba(60, 255, 236, 0.1);
-  border: 1px solid rgba(60, 255, 236, 0.3);
-  border-radius: 4px;
-  padding: 3px 6px;
-}
-`;
+const TRACK_COLORS = {
+  position: '#4A9EFF',
+  rotation: '#A371F7',
+  scale: '#3FB950',
+  animation: '#D29922',
+  stagger: '#56B6C2',
+};
 
 const BaseElement = /** @type {typeof HTMLElement} */(
   typeof HTMLElement !== 'undefined' ? HTMLElement : class {}
 );
 
 /**
- * Isolated Shadow DOM Web Component powering Anime Studio HUD.
+ * Desktop NLE / Motion-Editor Shadow DOM Component (`<anime-studio>`) for Anime.js v4.
+ * Supports both full-viewport `mode="workspace"` and compact bottom-docked `mode="dock"`.
  */
 class AnimeStudioElement extends BaseElement {
   constructor() {
@@ -637,15 +50,44 @@ class AnimeStudioElement extends BaseElement {
     this._store = null;
     /** @type {any} */
     this._studio = null;
-    this._tab = 'curves';
-    this._codeMode = 'esm';
-    this._zoom = 1;
+
+    /** @type {'workspace'|'dock'} */
+    this._mode = 'dock';
     this._collapsed = false;
+    this._leftCollapsed = false;
+    this._rightCollapsed = false;
+    this._leftWidth = 244;
+    this._rightWidth = 304;
+    this._timelineHeight = 256;
+
+    // Timeline view state
+    this._tlZoom = 1;
+    this._trackSize = 'normal'; // 'compact' | 'normal' | 'expanded'
+    this._expandedLayers = new Set();
+    this._layerSearch = '';
+
+    // Canvas viewport state (workspace mode)
+    this._canvasZoom = 1;
+    this._canvasPanX = 0;
+    this._canvasPanY = 0;
+    this._showGrid = true;
+    this._showGuides = false;
+    this._panTool = false;
     this._inspectTargets = false;
-    this._expandedGroups = new Set();
+    this._stageWidth = 960;
+    this._stageHeight = 540;
+
+    // Collapsible Inspector sections
+    this._collapsedSections = new Set();
+
+    // Export modal state
+    this._exportOpen = false;
+    this._exportTab = 'video'; // 'video' | 'frames' | 'code'
+    this._codeMode = 'esm';
+    this._renderState = { status: '', videoUrl: '', filmstrip: [] };
+
     this._rafId = 0;
-    this._height = 290;
-    this._renderState = { status: '', progress: 0, videoUrl: '', filmstrip: [] };
+    this._suspendStoreRender = false;
 
     /** @type {HTMLElement|null} */
     this._playheadEl = null;
@@ -666,14 +108,26 @@ class AnimeStudioElement extends BaseElement {
   /**
    * @param  {StudioStore} store
    * @param  {any} studio
+   * @param  {{ mode?: 'workspace'|'dock', stageWidth?: Number, stageHeight?: Number }} [opts]
    * @return {void}
    */
-  bind(store, studio) {
+  bind(store, studio, opts = {}) {
     this._store = store;
     this._studio = studio;
-    this._unsubscribe = store.subscribe(() => this.render());
+    this._mode = opts.mode === 'workspace' ? 'workspace' : 'dock';
+    if (opts.stageWidth) this._stageWidth = opts.stageWidth;
+    if (opts.stageHeight) this._stageHeight = opts.stageHeight;
+    this.setAttribute('mode', this._mode);
+
+    this._unsubscribe = store.subscribe(() => {
+      if (!this._suspendStoreRender) this.render();
+    });
+
     this.render();
     this._startRaf();
+    if (this._mode === 'workspace' && typeof requestAnimationFrame === 'function') {
+      requestAnimationFrame(() => this.fitCanvasToScreen());
+    }
   }
 
   disconnectedCallback() {
@@ -694,6 +148,7 @@ class AnimeStudioElement extends BaseElement {
     this._rafId = requestAnimationFrame(step);
   }
 
+  /** @param {any} inst @return {Number} */
   _getCycleDuration(inst) {
     if (!inst) return 1000;
     const isInf = inst.iterationCount === Infinity || inst.duration >= 1e11;
@@ -701,7 +156,7 @@ class AnimeStudioElement extends BaseElement {
     return Math.max(1, d || inst.iterationDuration || 1);
   }
 
-  /** Updates only playhead position, timecode text, live curve dot, and target boxes (zero layout thrash). */
+  /** Updates playhead, timecode, curve progress dot, and DOM bounding boxes at 60fps with zero re-render. */
   _updateLivePlayhead() {
     if (!this._store) return;
     const { entry, tween } = this._store.getSelection();
@@ -715,7 +170,8 @@ class AnimeStudioElement extends BaseElement {
     const totalFrames = Math.max(1, Math.round((dur / 1000) * fps));
 
     if (this._timecodeEl) {
-      this._timecodeEl.textContent = `${String(Math.round(cur)).padStart(4, '0')} / ${Math.round(dur)} ms · F${curFrame}/${totalFrames}`;
+      const secs = (cur / 1000).toFixed(3).padStart(6, '0');
+      this._timecodeEl.innerHTML = `<span>${secs}s</span><span class="timecode-sub">${Math.round(cur)} / ${Math.round(dur)} ms · F${curFrame}/${totalFrames}</span>`;
     }
 
     if (this._playheadEl) {
@@ -724,7 +180,8 @@ class AnimeStudioElement extends BaseElement {
     }
 
     if (this._playBtnEl) {
-      this._playBtnEl.textContent = inst.paused ? '▶ Play' : '⏸ Pause';
+      this._playBtnEl.innerHTML = inst.paused ? icons.ICONS.play : icons.ICONS.pause;
+      this._playBtnEl.title = inst.paused ? 'Play (Space)' : 'Pause (Space)';
       this._playBtnEl.classList.toggle('active', !inst.paused);
     }
 
@@ -733,33 +190,33 @@ class AnimeStudioElement extends BaseElement {
       const twDur = Math.max(1, tween.duration);
       const t = helpers.clamp((cur - twStart) / twDur, 0, 1);
       const y = tween.easing.fn ? tween.easing.fn(t) : t;
-      this._curveDotEl.setAttribute('cx', String(t * 180));
-      this._curveDotEl.setAttribute('cy', String(180 - helpers.clamp(y, -0.24, 1.24) * 180));
+      this._curveDotEl.setAttribute('cx', String(t * 160));
+      this._curveDotEl.setAttribute('cy', String(130 - helpers.clamp(y, -0.25, 1.25) * 110));
     }
 
     this._renderTargetHighlights();
   }
 
-  /** Highlights currently selected DOM targets on the viewport when inspect mode is active. */
+  /** Renders viewport bounding-box overlays when Inspect is active. */
   _renderTargetHighlights() {
     if (!this._overlayEl || !this._store) return;
     if (!this._inspectTargets || this._collapsed) {
       if (this._overlayEl.childElementCount) this._overlayEl.innerHTML = '';
       return;
     }
-    const { group } = this._store.getSelection();
-    if (!group || !group.targets.length) {
+    const { layer } = this._store.getSelection();
+    if (!layer || !layer.targets.length) {
       if (this._overlayEl.childElementCount) this._overlayEl.innerHTML = '';
       return;
     }
-
-    const domTargets = group.targets.filter(t => t && (t[consts.isDomSymbol] || t[consts.isSvgSymbol] || (typeof Element !== 'undefined' && t instanceof Element)));
+    const domTargets = layer.targets.filter(t =>
+      t && (t[consts.isDomSymbol] || t[consts.isSvgSymbol] || (typeof Element !== 'undefined' && t instanceof Element))
+    );
     if (!domTargets.length) {
       if (this._overlayEl.childElementCount) this._overlayEl.innerHTML = '';
       return;
     }
 
-    // Reuse existing highlight nodes when count matches to avoid allocation in RAF
     while (this._overlayEl.childElementCount < domTargets.length) {
       const box = consts.doc.createElement('div');
       box.className = 'highlight-box';
@@ -784,121 +241,110 @@ class AnimeStudioElement extends BaseElement {
     }
   }
 
+  /** Computes fit-to-screen zoom for the central canvas viewport. */
+  fitCanvasToScreen() {
+    if (!this._shadow || this._mode !== 'workspace') return;
+    const wrap = /** @type {HTMLElement|null} */(this._shadow.querySelector('.canvas-stage-wrap'));
+    if (!wrap) return;
+    const rect = wrap.getBoundingClientRect();
+    const availW = Math.max(120, rect.width - 48);
+    const availH = Math.max(120, rect.height - 48);
+    const scale = Math.min(availW / this._stageWidth, availH / this._stageHeight, 1.5);
+    this._canvasZoom = Math.max(0.25, helpers.round(scale, 2));
+    this._canvasPanX = 0;
+    this._canvasPanY = 0;
+    this._applyCanvasTransform();
+  }
+
+  /** Updates composition viewport transform without triggering a full DOM render. */
+  _applyCanvasTransform() {
+    if (!this._shadow) return;
+    const vp = /** @type {HTMLElement|null} */(this._shadow.querySelector('.composition-viewport'));
+    const zoomReadout = /** @type {HTMLElement|null} */(this._shadow.querySelector('#canvas-zoom-label'));
+    if (vp) {
+      vp.style.width = `${this._stageWidth}px`;
+      vp.style.height = `${this._stageHeight}px`;
+      vp.style.transform = `translate(${this._canvasPanX}px, ${this._canvasPanY}px) scale(${this._canvasZoom})`;
+    }
+    if (zoomReadout) {
+      zoomReadout.textContent = `${Math.round(this._canvasZoom * 100)}%`;
+    }
+  }
+
   /**
-   * Generates an SVG path `d` attribute string for an easing function inside `(width x height)`.
+   * Generates an SVG path `d` attribute string for an easing function.
    *
    * @param  {(t: Number) => Number} easeFn
    * @param  {Number} w
    * @param  {Number} h
    * @param  {Boolean} [fitBounds=false]
+   * @param  {Number} [yOffset=0]
    * @return {String}
    */
-  _buildCurvePath(easeFn, w, h, fitBounds = false) {
+  _buildCurvePath(easeFn, w, h, fitBounds = false, yOffset = 0) {
     const { points, minY, maxY } = easingsBridge.sampleEaseCurve(easeFn, 48);
     const y0 = fitBounds ? Math.min(0, minY) : 0;
     const y1 = fitBounds ? Math.max(1, maxY) : 1;
     const span = Math.max(0.001, y1 - y0);
     return points.map((pt, idx) => {
       const x = helpers.round(pt.t * w, 2);
-      const y = helpers.round(h - ((pt.y - y0) / span) * h, 2);
+      const y = helpers.round(yOffset + h - ((pt.y - y0) / span) * h, 2);
       return `${idx === 0 ? 'M' : 'L'}${x} ${y}`;
     }).join(' ');
   }
 
-  /** Full Shadow DOM UI render. */
+  /** Full Shadow DOM render (called only on structural/state changes, never during RAF). */
   render() {
     if (!this._shadow || !this._store) return;
     const store = this._store;
-    const { entry, group, tween } = store.getSelection();
+    const { entry, layer, group, tween } = store.getSelection();
     const entries = Array.from(store.entries.values());
     const inst = entry ? entry.instance : null;
     const dur = this._getCycleDuration(inst);
     const fps = this._studio ? this._studio.fps : 60;
-    const isVirtual = engine.engine.isVirtual;
 
-    const optionsHtml = entries.length
-      ? entries.map(e => {
-          const ed = this._getCycleDuration(e.instance);
-          const tag = e.instance.iterationCount === Infinity ? '∞' : `${Math.round(ed)}ms`;
-          return `<option value="${e.id}" ${entry && e.id === entry.id ? 'selected' : ''}>${e.name} (${tag})</option>`;
-        }).join('')
-      : '<option value="">No active animations</option>';
+    // Preserve timeline scroll positions across re-renders
+    const prevTreeScroll = this._shadow.querySelector('#tl-tree-body')?.scrollTop || 0;
+    const prevLaneScrollTop = this._shadow.querySelector('#tl-lanes-pane')?.scrollTop || 0;
+    const prevLaneScrollLeft = this._shadow.querySelector('#tl-lanes-pane')?.scrollLeft || 0;
 
-    const rulerTicksHtml = this._renderRulerTicks(dur, entry);
-    const tracksHtml = entry ? this._renderTracks(entry, group, tween, dur) : '<div class="empty-state">Create an animation with animate() or createTimeline() to inspect it here.</div>';
-    const inspectorHtml = this._renderInspector(entry, group, tween, fps);
+    const rowHeight = this._trackSize === 'compact' ? 23 : this._trackSize === 'expanded' ? 34 : 28;
+    const subHeight = this._trackSize === 'compact' ? 20 : this._trackSize === 'expanded' ? 27 : 23;
+
+    const gridStyle = this._mode === 'workspace'
+      ? `--left-w: ${this._leftCollapsed ? 0 : this._leftWidth}px; --right-w: ${this._rightCollapsed ? 0 : this._rightWidth}px; --timeline-h: ${this._timelineHeight}px; --track-row-h: ${rowHeight}px; --track-sub-h: ${subHeight}px; grid-template-columns: ${this._leftCollapsed ? '0px 0px' : `${this._leftWidth}px 4px`} minmax(320px, 1fr) ${this._rightCollapsed ? '0px 0px' : `4px ${this._rightWidth}px`};`
+      : `--left-w: ${this._leftCollapsed ? 0 : 210}px; --right-w: ${this._rightCollapsed ? 0 : 296}px; --timeline-h: ${this._timelineHeight}px; --track-row-h: ${rowHeight}px; --track-sub-h: ${subHeight}px;`;
+
+    const bodyHtml = this._mode === 'workspace'
+      ? `
+        <div class="shell-workspace" style="${gridStyle}">
+          ${this._renderAppHeader(entries, entry)}
+          ${this._renderLeftSidebar(entry, layer)}
+          <div class="splitter-v" id="split-left" style="grid-area: split-l; ${this._leftCollapsed ? 'display:none' : ''}"></div>
+          ${this._renderCenterCanvas()}
+          <div class="splitter-v" id="split-right" style="grid-area: split-r; ${this._rightCollapsed ? 'display:none' : ''}"></div>
+          ${this._renderRightInspector(entry, layer, group, tween)}
+          <div class="splitter-h" id="split-timeline" style="grid-area: split-t;"></div>
+          ${this._renderBottomTimeline(entry, layer, group, tween, dur, fps)}
+        </div>
+      `
+      : `
+        <div class="shell-dock ${this._collapsed ? 'collapsed' : ''}" style="${gridStyle}">
+          <div class="splitter-h" id="split-timeline"></div>
+          ${this._renderDockHeader(entries, entry)}
+          <div class="dock-grid">
+            ${this._renderLeftSidebar(entry, layer)}
+            ${this._renderBottomTimeline(entry, layer, group, tween, dur, fps)}
+            ${this._renderRightInspector(entry, layer, group, tween)}
+          </div>
+        </div>
+      `;
 
     this._shadow.innerHTML = `
-      <style>${STUDIO_CSS}</style>
+      <style>${styles.STUDIO_STYLES}</style>
       <div class="overlay-layer" id="overlay-layer"></div>
-      <div class="dock ${this._collapsed ? 'collapsed' : ''}" style="--studio-height: ${this._height}px">
-        <div class="resize-handle" id="resize-handle" title="Drag to resize studio"></div>
-        <div class="toolbar">
-          <div class="brand">
-            <span class="brand-dots">
-              <span style="background:#FF4B4B"></span>
-              <span style="background:#F6FF56"></span>
-              <span style="background:#18FF74"></span>
-              <span style="background:#61C3FF"></span>
-            </span>
-            <span>ANIME STUDIO</span>
-          </div>
-          <select id="entry-select" title="Select Timeline or Animation">${optionsHtml}</select>
-          <div class="btn-group">
-            <button id="btn-reset" title="Reset to 0ms">⏮</button>
-            <button id="btn-step-back" title="Step -1 Frame (←)">◀</button>
-            <button id="btn-play" title="Play / Pause (Space)">${inst && !inst.paused ? '⏸ Pause' : '▶ Play'}</button>
-            <button id="btn-step-fwd" title="Step +1 Frame (→)">▶</button>
-            <button id="btn-reverse" title="Reverse playback">⇄</button>
-          </div>
-          <div class="timecode" id="timecode">0000 / ${Math.round(dur)} ms</div>
-          <div class="btn-group">
-            ${[0.25, 0.5, 1, 2].map(r => `<button class="speed-btn ${inst && inst.speed === r ? 'active' : ''}" data-speed="${r}">${r}×</button>`).join('')}
-          </div>
-          <button id="btn-vclock" class="${isVirtual ? 'active' : ''}" title="Toggle deterministic virtual clock">V-Clock: ${isVirtual ? 'ON' : 'OFF'}</button>
-          <select id="fps-select" title="Studio stepping & render FPS">
-            ${[24, 30, 60, 120].map(f => `<option value="${f}" ${fps === f ? 'selected' : ''}>${f} fps</option>`).join('')}
-          </select>
-          <button id="btn-inspect" class="${this._inspectTargets ? 'active' : ''}" title="Highlight DOM targets on viewport">◎ Inspect</button>
-          <div class="spacer"></div>
-          <button id="btn-collapse">${this._collapsed ? '▲ Expand' : '▼ Collapse'}</button>
-        </div>
-        <div class="body">
-          <div class="timeline-pane">
-            <div class="timeline-subbar">
-              <span>${entry ? `${entry.groups.length} track group(s) · ${entry.labels.length} label(s)` : 'Idle'} · Drag bar to shift offset, drag right edge to stretch</span>
-              <label style="display:inline-flex;align-items:center;gap:5px;">
-                Zoom
-                <input id="zoom-range" type="range" min="1" max="5" step="0.25" value="${this._zoom}" style="width:70px">
-                <span>${this._zoom}×</span>
-              </label>
-            </div>
-            <div class="timeline-scroll" id="timeline-scroll">
-              ${entry ? `
-              <div class="timeline-grid" style="width: ${Math.round(100 * this._zoom)}%;">
-                <div class="ruler-corner"><span>TRACK / TARGET</span><span>ms</span></div>
-                <div class="ruler-track" id="ruler-track">
-                  ${rulerTicksHtml}
-                  <div class="playhead-line" id="playhead" style="left:0%">
-                    <div class="playhead-head"></div>
-                  </div>
-                </div>
-                ${tracksHtml}
-              </div>
-              ` : tracksHtml}
-            </div>
-          </div>
-          <div class="inspector-pane">
-            <div class="tabs">
-              <button class="tab ${this._tab === 'curves' ? 'active' : ''}" data-tab="curves">Curves</button>
-              <button class="tab ${this._tab === 'stagger' ? 'active' : ''}" data-tab="stagger">Stagger</button>
-              <button class="tab ${this._tab === 'render' ? 'active' : ''}" data-tab="render">Render</button>
-              <button class="tab ${this._tab === 'code' ? 'active' : ''}" data-tab="code">Code</button>
-            </div>
-            <div class="inspector-body">${inspectorHtml}</div>
-          </div>
-        </div>
-      </div>
+      ${bodyHtml}
+      ${this._exportOpen ? this._renderExportModal(entry, dur, fps) : ''}
     `;
 
     this._playheadEl = this._shadow.querySelector('#playhead');
@@ -907,8 +353,578 @@ class AnimeStudioElement extends BaseElement {
     this._overlayEl = this._shadow.querySelector('#overlay-layer');
     this._playBtnEl = this._shadow.querySelector('#btn-play');
 
-    this._bindEvents(entry, group, tween, dur);
+    // Restore timeline scroll coordinates
+    const treeBody = this._shadow.querySelector('#tl-tree-body');
+    const lanesPane = this._shadow.querySelector('#tl-lanes-pane');
+    if (treeBody) treeBody.scrollTop = prevTreeScroll;
+    if (lanesPane) {
+      lanesPane.scrollTop = prevLaneScrollTop;
+      lanesPane.scrollLeft = prevLaneScrollLeft;
+    }
+
+    this._bindEvents(entry, layer, group, tween, dur, fps);
+    if (this._mode === 'workspace') this._applyCanvasTransform();
     this._updateLivePlayhead();
+  }
+
+  /**
+   * @param  {Array<StudioEntry>} entries
+   * @param  {StudioEntry|null} entry
+   * @return {String}
+   */
+  _renderAppHeader(entries, entry) {
+    const store = this._store;
+    const sceneOpts = store.scenes.length
+      ? `<select id="scene-select" title="Switch Active Scene">${store.scenes.map(sc => `<option value="${sc.id}" ${store.activeSceneId === sc.id ? 'selected' : ''}>Scene: ${sc.label}</option>`).join('')}</select>`
+      : '';
+    const entryOpts = entries.length
+      ? `<select id="entry-select" title="Active Composition / Timeline">${entries.map(e => {
+          const ed = this._getCycleDuration(e.instance);
+          const tag = e.instance.iterationCount === Infinity ? '∞' : `${Math.round(ed)}ms`;
+          return `<option value="${e.id}" ${entry && e.id === entry.id ? 'selected' : ''}>${e.name} (${tag})</option>`;
+        }).join('')}</select>`
+      : `<select id="entry-select" disabled><option>No Active Timeline</option></select>`;
+
+    return `
+      <header class="app-header">
+        <div class="header-group">
+          <div class="brand-mark">
+            ${icons.ICONS.logo}
+            <span>Anime Studio</span>
+            <span class="brand-version">V4</span>
+          </div>
+          <input class="project-name-input" id="inp-project-name" type="text" value="${store.projectName.replace(/"/g, '&quot;')}" title="Project Name" />
+          <span class="status-badge" title="${store.isDirty ? 'Unsaved edits in workspace' : 'All changes saved'}">
+            <span class="status-dot ${store.isDirty ? 'dirty' : ''}"></span>
+            <span>${store.isDirty ? 'Modified' : 'Saved'}</span>
+          </span>
+          <button id="btn-save" class="ghost" title="Save Snapshot">${icons.ICONS.save} Save</button>
+          <div class="divider-v"></div>
+          <button id="btn-undo" class="icon-btn" title="Undo (Cmd/Ctrl+Z)" ${store.canUndo ? '' : 'disabled'}>${icons.ICONS.undo}</button>
+          <button id="btn-redo" class="icon-btn" title="Redo (Cmd/Ctrl+Shift+Z)" ${store.canRedo ? '' : 'disabled'}>${icons.ICONS.redo}</button>
+        </div>
+
+        <div class="header-group">
+          ${sceneOpts}
+          ${entryOpts}
+        </div>
+
+        <div class="header-group">
+          <button id="btn-toggle-left" class="icon-btn ${this._leftCollapsed ? '' : 'active'}" title="Toggle Layers Panel">${icons.ICONS.panelLeft}</button>
+          <button id="btn-toggle-right" class="icon-btn ${this._rightCollapsed ? '' : 'active'}" title="Toggle Inspector Panel">${icons.ICONS.panelRight}</button>
+          <div class="divider-v"></div>
+          <button id="btn-open-export" class="primary" title="Export Video, Frames or Code">${icons.ICONS.export} Export</button>
+        </div>
+      </header>
+    `;
+  }
+
+  /**
+   * Compact header used when mounted in `mode="dock"` on standalone webpages.
+   *
+   * @param  {Array<StudioEntry>} entries
+   * @param  {StudioEntry|null} entry
+   * @return {String}
+   */
+  _renderDockHeader(entries, entry) {
+    const store = this._store;
+    const entryOpts = entries.length
+      ? entries.map(e => {
+          const ed = this._getCycleDuration(e.instance);
+          const tag = e.instance.iterationCount === Infinity ? '∞' : `${Math.round(ed)}ms`;
+          return `<option value="${e.id}" ${entry && e.id === entry.id ? 'selected' : ''}>${e.name} (${tag})</option>`;
+        }).join('')
+      : '<option value="">No Active Timeline</option>';
+
+    return `
+      <div class="dock-header">
+        <div class="header-group">
+          <div class="brand-mark" style="border-right:none;padding-right:4px">
+            ${icons.ICONS.logo}
+            <span>Anime Studio</span>
+          </div>
+          <select id="entry-select">${entryOpts}</select>
+          <button id="btn-undo" class="icon-btn" title="Undo" ${store.canUndo ? '' : 'disabled'}>${icons.ICONS.undo}</button>
+          <button id="btn-redo" class="icon-btn" title="Redo" ${store.canRedo ? '' : 'disabled'}>${icons.ICONS.redo}</button>
+        </div>
+        <div class="header-group">
+          <button id="btn-inspect" class="${this._inspectTargets ? 'active' : ''}">${icons.ICONS.crosshair} Inspect</button>
+          <button id="btn-open-export" class="primary">${icons.ICONS.export} Export / Code</button>
+          <button id="btn-collapse">${this._collapsed ? 'Expand' : 'Collapse'}</button>
+        </div>
+      </div>
+    `;
+  }
+
+  /**
+   * B. Left Sidebar — Scene / Object Hierarchy with visibility & lock controls.
+   *
+   * @param  {StudioEntry|null} entry
+   * @param  {StudioLayerNode|null} selectedLayer
+   * @return {String}
+   */
+  _renderLeftSidebar(entry, selectedLayer) {
+    const store = this._store;
+    const q = this._layerSearch.trim().toLowerCase();
+    const layers = entry ? entry.layers.filter(l => !q || l.name.toLowerCase().includes(q) || l.targetLabel.toLowerCase().includes(q)) : [];
+
+    const treeHtml = layers.length
+      ? layers.map((l, idx) => {
+          const isSel = selectedLayer && selectedLayer.id === l.id;
+          const expanded = this._expandedLayers.has(l.id);
+          const swatch = TRACK_COLORS[l.properties[0]?.category || 'animation'] || TRACK_COLORS.animation;
+          const countTag = l.targets.length > 1 ? `<span class="layer-count">${l.targets.length}</span>` : '';
+
+          let html = `
+            <div class="layer-row ${isSel ? 'selected' : ''} ${l.hidden ? 'is-hidden' : ''}" data-select-layer="${l.id}">
+              <button class="layer-act-btn" data-toggle-layer="${l.id}" title="${expanded ? 'Collapse' : 'Expand'}">${expanded ? icons.ICONS.chevronDown : icons.ICONS.chevronRight}</button>
+              <span class="layer-swatch" style="background:${swatch}"></span>
+              <span class="layer-label" title="${l.name} (${l.targetLabel})">${l.name}</span>
+              ${countTag}
+              <div class="layer-actions ${l.hidden || l.locked ? 'pinned' : ''}">
+                <button class="layer-act-btn ${l.hidden ? 'warn' : ''}" data-vis-layer="${l.id}" title="${l.hidden ? 'Show Layer' : 'Hide Layer'}">${l.hidden ? icons.ICONS.eyeOff : icons.ICONS.eye}</button>
+                <button class="layer-act-btn ${l.locked ? 'on' : ''}" data-lock-layer="${l.id}" title="${l.locked ? 'Unlock Layer' : 'Lock Layer'}">${l.locked ? icons.ICONS.lock : icons.ICONS.unlock}</button>
+              </div>
+            </div>
+          `;
+
+          if (expanded) {
+            for (let p = 0; p < l.properties.length; p++) {
+              const prop = l.properties[p];
+              const pSel = isSel && store.selectedProperty === prop.property;
+              html += `
+                <div class="layer-row sub ${pSel ? 'selected' : ''}" data-select-layer="${l.id}" data-select-prop="${prop.property}">
+                  <span class="layer-swatch" style="background:${TRACK_COLORS[prop.category] || '#888'};opacity:0.8"></span>
+                  <span class="layer-label">${prop.property}</span>
+                  <span class="layer-count">${prop.toText}</span>
+                </div>
+              `;
+            }
+          }
+          return html;
+        }).join('')
+      : `<div class="empty-state">${entry ? 'No matching layers.' : 'No objects in scene.'}</div>`;
+
+    return `
+      <aside class="panel panel-left ${this._leftCollapsed ? 'is-collapsed' : ''}">
+        <div class="panel-header">
+          <span class="panel-title">${icons.ICONS.layers} Layers & Objects</span>
+          ${store.supportsAddObject ? `<button id="btn-add-object" style="height:20px;padding:0 6px;font-size:10px" title="Add Object to Scene">${icons.ICONS.plus} Add</button>` : ''}
+        </div>
+        <div class="layers-toolbar">
+          <input class="layers-search" id="inp-layer-search" type="text" placeholder="Filter layers..." value="${this._layerSearch.replace(/"/g, '&quot;')}" />
+          <button id="btn-clear-selection" class="ghost" style="padding:0 5px" title="Deselect all">Clear</button>
+        </div>
+        <div class="layers-tree" id="layers-tree">${treeHtml}</div>
+      </aside>
+    `;
+  }
+
+  /**
+   * C. Central Workspace — Centered Canvas Composition Viewport with Zoom / Pan / Fit / Grid.
+   *
+   * @return {String}
+   */
+  _renderCenterCanvas() {
+    return `
+      <main class="canvas-workspace">
+        <div class="canvas-subbar">
+          <div class="header-group">
+            <span class="canvas-dims">${this._stageWidth} × ${this._stageHeight}</span>
+            <div class="divider-v"></div>
+            <button id="btn-canvas-pan" class="icon-btn ${this._panTool ? 'active' : ''}" title="Pan Tool (or hold Space + Drag)">${icons.ICONS.hand}</button>
+            <button id="btn-canvas-grid" class="icon-btn ${this._showGrid ? 'active' : ''}" title="Toggle Background Grid">${icons.ICONS.grid}</button>
+            <button id="btn-canvas-guides" class="icon-btn ${this._showGuides ? 'active' : ''}" title="Toggle Center Guides">${icons.ICONS.crosshair}</button>
+            <button id="btn-inspect" class="${this._inspectTargets ? 'active' : ''}" title="Highlight DOM Targets">${icons.ICONS.crosshair} Bounds</button>
+          </div>
+          <div class="header-group">
+            <button id="btn-zoom-out" class="icon-btn" title="Zoom Out">${icons.ICONS.zoomOut}</button>
+            <span id="canvas-zoom-label" style="font-family:var(--font-mono);font-size:10px;min-width:38px;text-align:center">${Math.round(this._canvasZoom * 100)}%</span>
+            <button id="btn-zoom-in" class="icon-btn" title="Zoom In">${icons.ICONS.zoomIn}</button>
+            <button id="btn-zoom-100" style="padding:0 6px" title="Reset Zoom to 100%">100%</button>
+            <button id="btn-zoom-fit" title="Fit Composition to Viewport">${icons.ICONS.fit} Fit</button>
+          </div>
+        </div>
+        <div class="canvas-stage-wrap ${this._showGrid ? 'with-grid' : ''} ${this._panTool ? 'pan-mode' : ''}" id="canvas-stage-wrap">
+          <div class="composition-viewport" id="composition-viewport">
+            <slot name="stage"></slot>
+            ${this._showGuides ? '<div class="composition-guides"></div>' : ''}
+          </div>
+        </div>
+      </main>
+    `;
+  }
+
+  /**
+   * D. Right Sidebar — Contextual Properties Inspector (Transform, Animation, Timing, Easing, Physics).
+   *
+   * @param  {StudioEntry|null} entry
+   * @param  {StudioLayerNode|null} layer
+   * @param  {StudioGroupTrack|null} group
+   * @param  {StudioTweenTrack|null} tween
+   * @return {String}
+   */
+  _renderRightInspector(entry, layer, group, tween) {
+    if (!entry || !layer || !group) {
+      return `
+        <aside class="panel panel-right ${this._rightCollapsed ? 'is-collapsed' : ''}">
+          <div class="panel-header">
+            <span class="panel-title">Properties Inspector</span>
+          </div>
+          <div class="empty-state">Select a layer or timeline clip to inspect Transform, Timing, Easing, and Physics properties.</div>
+        </aside>
+      `;
+    }
+
+    const locked = layer.locked;
+    const disabledAttr = locked ? 'disabled' : '';
+
+    // Partition properties strictly by relevance
+    const posProps = layer.properties.filter(p => p.category === 'position');
+    const rotProps = layer.properties.filter(p => p.category === 'rotation');
+    const scaleProps = layer.properties.filter(p => p.category === 'scale');
+    const animProps = layer.properties.filter(p => p.category === 'animation');
+    const hasTransform = posProps.length > 0 || rotProps.length > 0 || scaleProps.length > 0;
+
+    const renderPropRow = (/** @type {StudioPropertySummary} */p) => {
+      if (p.isScalarEditable) {
+        return `
+          <div class="prop-row">
+            <span class="prop-name" title="${p.property}">${p.property}</span>
+            <div class="prop-field-wrap">
+              <span class="prop-mini-tag">F</span>
+              <input type="number" step="any" data-prop-from="${p.property}" value="${p.fromNum ?? 0}" ${disabledAttr} />
+            </div>
+            <div class="prop-field-wrap">
+              <span class="prop-mini-tag">T</span>
+              <input type="number" step="any" data-prop-to="${p.property}" value="${p.toNum ?? 0}" ${disabledAttr} />
+            </div>
+          </div>
+        `;
+      }
+      return `
+        <div class="prop-row">
+          <span class="prop-name" title="${p.property}">${p.property}</span>
+          <input type="text" readonly value="${p.fromText}" />
+          <input type="text" readonly value="${p.toText}" />
+        </div>
+      `;
+    };
+
+    const section = (id, title, bodyHtml, badge = '') => {
+      const collapsed = this._collapsedSections.has(id);
+      return `
+        <div class="section ${collapsed ? 'collapsed' : ''}" data-section="${id}">
+          <div class="section-head" data-toggle-section="${id}">
+            <span class="section-head-left">${collapsed ? icons.ICONS.chevronRight : icons.ICONS.chevronDown}<span>${title}</span></span>
+            ${badge ? `<span class="layer-count">${badge}</span>` : ''}
+          </div>
+          <div class="section-body">${bodyHtml}</div>
+        </div>
+      `;
+    };
+
+    const transformHtml = hasTransform ? section('transform', 'Transform', `
+      ${posProps.length ? `<div class="prop-subgroup"><div class="prop-sublabel"><span>Position</span><span>${posProps[0].unit || 'px'}</span></div>${posProps.map(renderPropRow).join('')}</div>` : ''}
+      ${rotProps.length ? `<div class="prop-subgroup"><div class="prop-sublabel"><span>Rotation</span><span>deg</span></div>${rotProps.map(renderPropRow).join('')}</div>` : ''}
+      ${scaleProps.length ? `<div class="prop-subgroup"><div class="prop-sublabel"><span>Scale</span><span>×</span></div>${scaleProps.map(renderPropRow).join('')}</div>` : ''}
+    `, `${posProps.length + rotProps.length + scaleProps.length}`) : '';
+
+    const animationHtml = animProps.length ? section('animation', 'Animation Properties', `
+      ${animProps.map(renderPropRow).join('')}
+    `, `${animProps.length}`) : '';
+
+    const timingHtml = section('timing', 'Timing', `
+      <div class="grid-3">
+        <div class="field-col">
+          <label>Offset (ms)</label>
+          <input id="inp-offset" type="number" min="0" step="10" value="${helpers.round(group.offset, 1)}" ${disabledAttr} />
+        </div>
+        <div class="field-col">
+          <label>Delay (ms)</label>
+          <input type="number" readonly value="${helpers.round(group.delay, 1)}" />
+        </div>
+        <div class="field-col">
+          <label>Duration (ms)</label>
+          <input id="inp-duration" type="number" min="10" step="10" value="${helpers.round(group.duration, 1)}" ${disabledAttr} />
+        </div>
+      </div>
+      <div class="prop-row-2">
+        <span class="prop-name">End Time</span>
+        <input type="text" readonly value="${Math.round(group.endTime)} ms (Clip #${group.uid.split(':').pop()})" />
+      </div>
+    `);
+
+    const activeEase = tween ? tween.easing : group.easing;
+    const curvePath = this._buildCurvePath(activeEase.fn, 160, 110, false, 20);
+    const isBezier = activeEase.kind === 'bezier' && activeEase.bezier;
+    const isSpring = activeEase.kind === 'spring' && activeEase.spring;
+    const cb = isBezier ? activeEase.bezier : [0.22, 1, 0.36, 1];
+    const sp = isSpring ? activeEase.spring : { bounce: 0.45, duration: 628, mass: 1, stiffness: 100, damping: 10, settlingDuration: 628 };
+
+    const easingHtml = section('easing', 'Easing Curve', `
+      <div class="preset-grid">
+        ${easingsBridge.EASING_PRESETS.filter(p => p.kind !== 'spring').map(p => {
+          const active = (p.kind === 'bezier' && isBezier) || (p.value === activeEase.label);
+          return `<button class="ease-preset ${active ? 'active' : ''}" data-preset-kind="${p.kind}" data-preset-val="${p.value}" ${disabledAttr}>${p.label}</button>`;
+        }).join('')}
+      </div>
+      <div class="curve-panel">
+        <svg class="curve-svg" id="curve-svg" viewBox="-12 -8 184 166">
+          <rect x="0" y="20" width="160" height="110" fill="none" stroke="#252930"/>
+          <line x1="0" y1="75" x2="160" y2="75" stroke="#1E2228" stroke-dasharray="3 3"/>
+          <line x1="80" y1="20" x2="80" y2="130" stroke="#1E2228" stroke-dasharray="3 3"/>
+          <line x1="0" y1="130" x2="160" y2="20" stroke="#282D36"/>
+          <path id="curve-main-path" d="${curvePath}" fill="none" stroke="#4A9EFF" stroke-width="2"/>
+          ${isBezier ? `
+            <line id="cb-line-1" x1="0" y1="130" x2="${cb[0] * 160}" y2="${130 - cb[1] * 110}" stroke="#A371F7" stroke-width="1" stroke-dasharray="2 2"/>
+            <line id="cb-line-2" x1="160" y1="20" x2="${cb[2] * 160}" y2="${130 - cb[3] * 110}" stroke="#D29922" stroke-width="1" stroke-dasharray="2 2"/>
+            <circle class="bezier-handle" data-handle="1" cx="${cb[0] * 160}" cy="${130 - cb[1] * 110}" r="5" fill="#A371F7" stroke="#0D0E10" stroke-width="1.5"/>
+            <circle class="bezier-handle" data-handle="2" cx="${cb[2] * 160}" cy="${130 - cb[3] * 110}" r="5" fill="#D29922" stroke="#0D0E10" stroke-width="1.5"/>
+          ` : ''}
+          <circle id="curve-dot" cx="0" cy="130" r="3.5" fill="#E5534B" stroke="#ECEEF2" stroke-width="1"/>
+        </svg>
+        <div id="ease-label-readout" style="font-family:var(--font-mono);font-size:10px;color:var(--text-secondary);text-align:center">${activeEase.label}</div>
+        ${isBezier ? `
+          <div class="slider-line"><span>x1</span><input class="cb-slider" data-cb="0" type="range" min="0" max="1" step="0.01" value="${cb[0]}" ${disabledAttr}><span id="cb-val-0">${helpers.round(cb[0], 2)}</span></div>
+          <div class="slider-line"><span>y1</span><input class="cb-slider" data-cb="1" type="range" min="-0.4" max="1.4" step="0.01" value="${cb[1]}" ${disabledAttr}><span id="cb-val-1">${helpers.round(cb[1], 2)}</span></div>
+          <div class="slider-line"><span>x2</span><input class="cb-slider" data-cb="2" type="range" min="0" max="1" step="0.01" value="${cb[2]}" ${disabledAttr}><span id="cb-val-2">${helpers.round(cb[2], 2)}</span></div>
+          <div class="slider-line"><span>y2</span><input class="cb-slider" data-cb="3" type="range" min="-0.4" max="1.4" step="0.01" value="${cb[3]}" ${disabledAttr}><span id="cb-val-3">${helpers.round(cb[3], 2)}</span></div>
+        ` : ''}
+      </div>
+    `, activeEase.kind);
+
+    const physicsHtml = section('physics', 'Physics (Spring)', `
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:6px">
+        <span style="color:var(--text-secondary)">${isSpring ? `Settling: ${Math.round(sp.settlingDuration)} ms` : 'Inactive (Curve Easing)'}</span>
+        <button id="btn-enable-spring" class="${isSpring ? 'active' : ''}" ${disabledAttr}>${isSpring ? 'Spring Active' : 'Use Spring'}</button>
+      </div>
+      <div class="slider-line"><span>Bounce</span><input id="sp-bounce" type="range" min="-0.5" max="0.95" step="0.01" value="${sp.bounce}" ${disabledAttr}><span id="sp-bounce-val">${helpers.round(sp.bounce, 2)}</span></div>
+      <div class="slider-line"><span>Duration</span><input id="sp-dur" type="range" min="150" max="2000" step="10" value="${sp.duration}" ${disabledAttr}><span id="sp-dur-val">${Math.round(sp.duration)}</span></div>
+      <div class="grid-3">
+        <div class="field-col"><label>Mass</label><input id="sp-mass" type="number" min="0.1" step="0.1" value="${helpers.round(sp.mass, 2)}" ${disabledAttr}></div>
+        <div class="field-col"><label>Stiffness</label><input id="sp-stiffness" type="number" min="1" step="5" value="${helpers.round(sp.stiffness, 1)}" ${disabledAttr}></div>
+        <div class="field-col"><label>Damping</label><input id="sp-damping" type="number" min="0.5" step="0.5" value="${helpers.round(sp.damping, 1)}" ${disabledAttr}></div>
+      </div>
+    `, isSpring ? 'ON' : '');
+
+    // Contextual Stagger Cascade only when layer has staggered children
+    let staggerHtml = '';
+    if (layer.isStaggered) {
+      const members = entry.groups.filter(g => layer.groupUids.includes(g.uid));
+      const items = members.length > 1
+        ? members.map((g, i) => ({ label: `#${i}`, start: g.offset + g.delay, end: g.endTime }))
+        : (group.targets || []).map((_, i) => {
+            const tw = group.tweens.find(t => t.targetIndex === i);
+            return { label: `#${i}`, start: tw ? tw.offset + tw.delay : 0, end: tw ? tw.endTime : group.duration };
+          });
+      const maxEnd = Math.max(1, ...items.map(i => i.end));
+      staggerHtml = section('stagger', 'Stagger Distribution', `
+        <div class="stagger-list">
+          ${items.slice(0, 32).map(item => `
+            <div class="stagger-row">
+              <span style="color:var(--text-secondary)">${item.label}</span>
+              <div class="stagger-bar-bg">
+                <div class="stagger-bar-fill" style="left:${(item.start / maxEnd) * 100}%;width:${Math.max(2, ((item.end - item.start) / maxEnd) * 100)}%;background:${TRACK_COLORS.stagger}"></div>
+              </div>
+              <span style="font-family:var(--font-mono);color:var(--text-muted);text-align:right">+${Math.round(item.start)}ms</span>
+            </div>
+          `).join('')}
+        </div>
+      `, `${items.length}`);
+    }
+
+    return `
+      <aside class="panel panel-right ${this._rightCollapsed ? 'is-collapsed' : ''}">
+        <div class="panel-header">
+          <span class="panel-title">Properties Inspector</span>
+          ${locked ? `<span style="color:var(--warning);font-size:10px;display:inline-flex;align-items:center;gap:3px">${icons.ICONS.lock} Locked</span>` : ''}
+        </div>
+        <div class="inspector-context-bar">
+          <span class="context-title" title="${layer.name}">${layer.name}</span>
+          <span class="context-type">${layer.isStaggered ? `GROUP · ${layer.targets.length}` : 'OBJECT'}</span>
+        </div>
+        <div class="inspector-scroll">
+          ${transformHtml}
+          ${animationHtml}
+          ${timingHtml}
+          ${easingHtml}
+          ${physicsHtml}
+          ${staggerHtml}
+        </div>
+      </aside>
+    `;
+  }
+
+  /**
+   * E. Bottom Workspace — Compact Playback Toolbar + Multi-Track Timeline with Hierarchy & Keyframes.
+   *
+   * @param  {StudioEntry|null} entry
+   * @param  {StudioLayerNode|null} selectedLayer
+   * @param  {StudioGroupTrack|null} selectedGroup
+   * @param  {StudioTweenTrack|null} selectedTween
+   * @param  {Number} dur
+   * @param  {Number} fps
+   * @return {String}
+   */
+  _renderBottomTimeline(entry, selectedLayer, selectedGroup, selectedTween, dur, fps) {
+    const inst = entry ? entry.instance : null;
+    const isVirtual = engine.engine.isVirtual;
+    const isLoop = inst ? inst.iterationCount === Infinity || inst.iterationCount > 1 : false;
+
+    const layers = entry ? entry.layers : [];
+    let treeRowsHtml = '';
+    let laneRowsHtml = '';
+
+    for (let li = 0; li < layers.length; li++) {
+      const layer = layers[li];
+      const isLayerSel = selectedLayer && selectedLayer.id === layer.id;
+      const expanded = this._expandedLayers.has(layer.id);
+      const color = TRACK_COLORS[layer.properties[0]?.category || 'animation'] || TRACK_COLORS.animation;
+      const startLeft = helpers.clamp(layer.offset / dur, 0, 1) * 100;
+      const spanWidth = helpers.clamp((layer.endTime - layer.offset) / dur, 0.008, 1) * 100;
+      const endLeft = helpers.clamp(layer.endTime / dur, 0, 1) * 100;
+
+      treeRowsHtml += `
+        <div class="tl-track-row ${isLayerSel ? 'selected' : ''} ${layer.locked ? 'is-locked' : ''}" data-select-layer="${layer.id}">
+          <button class="layer-act-btn" data-toggle-layer="${layer.id}">${expanded ? icons.ICONS.chevronDown : icons.ICONS.chevronRight}</button>
+          <span class="layer-swatch" style="background:${color}"></span>
+          <span class="layer-label">${layer.name}</span>
+          <span class="layer-count">${layer.properties.length}</span>
+        </div>
+      `;
+
+      // Unified layer summary clip (or single object clip)
+      const delayRatio = (layer.endTime - layer.offset) > 0 ? helpers.clamp(layer.delay / (layer.endTime - layer.offset), 0, 0.9) * 100 : 0;
+      const spark = this._buildCurvePath(layer.easing.fn, 100, 18, true, 1);
+
+      laneRowsHtml += `
+        <div class="tl-lane-row ${isLayerSel ? 'selected' : ''}">
+          <div class="bar-wrap ${isLayerSel ? 'selected' : ''} ${layer.locked ? 'locked' : ''}"
+               data-drag-layer="${layer.id}"
+               data-drag-group="${layer.primaryGroupUid}"
+               style="left:${startLeft}%;width:${spanWidth}%">
+            ${layer.delay > 0 ? `<div class="bar-delay" style="width:${delayRatio}%"></div>` : ''}
+            <div class="bar-body" style="background:${color}">
+              <svg class="bar-spark" viewBox="0 0 100 20" preserveAspectRatio="none">
+                <path d="${spark}" fill="none" stroke="#090A0C" stroke-width="1.5"/>
+              </svg>
+              <span class="bar-text">${layer.name} · ${Math.round(layer.endTime - layer.offset)}ms</span>
+              ${!layer.isStaggered ? `<div class="bar-resize" data-resize-group="${layer.primaryGroupUid}" title="Drag right edge to resize duration"></div>` : ''}
+            </div>
+          </div>
+          <span class="kf-diamond ${isLayerSel ? 'active' : ''}" style="left:${startLeft}%" title="Start Keyframe (${Math.round(layer.offset)}ms)"></span>
+          <span class="kf-diamond ${isLayerSel ? 'active' : ''}" style="left:${endLeft}%" title="End Keyframe (${Math.round(layer.endTime)}ms)"></span>
+        </div>
+      `;
+
+      if (expanded) {
+        // Show distinct animated properties (or staggered sub-clips aggregated per property!)
+        for (let pi = 0; pi < layer.properties.length; pi++) {
+          const prop = layer.properties[pi];
+          const propColor = TRACK_COLORS[prop.category] || TRACK_COLORS.animation;
+          const isPropSel = isLayerSel && this._store.selectedProperty === prop.property;
+          const subTweens = prop.tweens.slice(0, 24);
+
+          treeRowsHtml += `
+            <div class="tl-track-row sub ${isPropSel ? 'selected' : ''}" data-select-layer="${layer.id}" data-select-prop="${prop.property}">
+              <span class="layer-swatch" style="background:${propColor}"></span>
+              <span class="layer-label">${prop.property}</span>
+              <span class="layer-count">${prop.fromText}→${prop.toText}</span>
+            </div>
+          `;
+
+          const clipsHtml = subTweens.map(tw => {
+            const subGroup = entry.groups.find(g => g.animRef === tw.animRef);
+            const twSel = selectedTween && selectedTween.uid === tw.uid;
+            const twLeft = helpers.clamp(tw.offset / dur, 0, 1) * 100;
+            const twWidth = helpers.clamp((tw.delay + tw.duration) / dur, 0.005, 1) * 100;
+            const twEnd = helpers.clamp(tw.endTime / dur, 0, 1) * 100;
+            const twDelayPct = (tw.delay + tw.duration) > 0 ? (tw.delay / (tw.delay + tw.duration)) * 100 : 0;
+            return `
+              <div class="bar-wrap ${twSel || isPropSel ? 'selected' : ''} ${layer.locked ? 'locked' : ''}"
+                   data-drag-group="${subGroup ? subGroup.uid : layer.primaryGroupUid}"
+                   data-select-tween="${tw.uid}"
+                   data-select-layer="${layer.id}"
+                   data-select-prop="${prop.property}"
+                   style="left:${twLeft}%;width:${twWidth}%;cursor:pointer">
+                ${tw.delay > 0 ? `<div class="bar-delay" style="width:${twDelayPct}%"></div>` : ''}
+                <div class="bar-body" style="background:${propColor};opacity:0.86">
+                  ${subTweens.length === 1 ? `<span class="bar-text">${prop.property}: ${tw.fromText} → ${tw.toText}</span>` : ''}
+                </div>
+              </div>
+              ${subTweens.length <= 6 ? `<span class="kf-diamond" style="left:${twLeft}%"></span><span class="kf-diamond" style="left:${twEnd}%"></span>` : ''}
+            `;
+          }).join('');
+
+          laneRowsHtml += `<div class="tl-lane-row sub ${isPropSel ? 'selected' : ''}">${clipsHtml}</div>`;
+        }
+      }
+    }
+
+    const rulerHtml = this._renderRulerTicks(dur, entry);
+
+    return `
+      <section class="timeline-workspace">
+        <div class="playback-toolbar">
+          <div class="header-group">
+            <button id="btn-reset" class="icon-btn" title="Jump to Start">${icons.ICONS.toStart}</button>
+            <button id="btn-step-back" class="icon-btn" title="Step Back 1 Frame (←)">${icons.ICONS.stepBack}</button>
+            <button id="btn-play" class="icon-btn ${inst && !inst.paused ? 'active' : ''}" title="Play / Pause (Space)">${inst && !inst.paused ? icons.ICONS.pause : icons.ICONS.play}</button>
+            <button id="btn-step-fwd" class="icon-btn" title="Step Forward 1 Frame (→)">${icons.ICONS.stepFwd}</button>
+            <button id="btn-reverse" class="icon-btn" title="Reverse Direction">${icons.ICONS.reverse}</button>
+            <button id="btn-loop" class="icon-btn ${isLoop ? 'active' : ''}" title="Toggle Loop">${icons.ICONS.loop}</button>
+            <div class="divider-v"></div>
+            <div class="timecode-display" id="timecode">0.000s</div>
+          </div>
+
+          <div class="header-group">
+            ${[0.25, 0.5, 1, 2].map(r => `<button class="speed-btn ${inst && inst.speed === r ? 'active' : ''}" data-speed="${r}" style="padding:0 5px">${r}×</button>`).join('')}
+            <div class="divider-v"></div>
+            <button id="btn-vclock" class="${isVirtual ? 'active' : ''}" title="Deterministic Virtual Clock">${icons.ICONS.clock} V-Clock: ${isVirtual ? 'ON' : 'OFF'}</button>
+            <select id="fps-select" title="Frame Rate (FPS)">
+              ${[24, 30, 60, 120].map(f => `<option value="${f}" ${fps === f ? 'selected' : ''}>${f} fps</option>`).join('')}
+            </select>
+          </div>
+
+          <div class="header-group">
+            <select id="track-size-select" title="Timeline Track Height">
+              <option value="compact" ${this._trackSize === 'compact' ? 'selected' : ''}>Tracks: Compact</option>
+              <option value="normal" ${this._trackSize === 'normal' ? 'selected' : ''}>Tracks: Normal</option>
+              <option value="expanded" ${this._trackSize === 'expanded' ? 'selected' : ''}>Tracks: Tall</option>
+            </select>
+            <button id="btn-tl-zoom-out" class="icon-btn" title="Zoom Out Timeline">${icons.ICONS.zoomOut}</button>
+            <input id="zoom-range" type="range" min="1" max="5" step="0.25" value="${this._tlZoom}" style="width:68px" title="Timeline Zoom">
+            <button id="btn-tl-zoom-in" class="icon-btn" title="Zoom In Timeline">${icons.ICONS.zoomIn}</button>
+          </div>
+        </div>
+
+        <div class="timeline-split">
+          <div class="tl-tree-pane">
+            <div class="tl-tree-head">
+              <span>Tracks (${layers.length})</span>
+              <span>Props</span>
+            </div>
+            <div class="tl-tree-body" id="tl-tree-body">
+              ${treeRowsHtml || '<div class="empty-state" style="padding:14px">No tracks</div>'}
+            </div>
+          </div>
+          <div class="tl-lanes-pane" id="tl-lanes-pane">
+            <div class="tl-canvas-inner" style="width:${Math.round(100 * this._tlZoom)}%">
+              <div class="tl-tracks-inset">
+                <div class="ruler-track" id="ruler-track">
+                  <div class="ruler-coords" id="ruler-coords">${rulerHtml}</div>
+                </div>
+                ${laneRowsHtml}
+                <div class="playhead-line" id="playhead" style="left:0%">
+                  <div class="playhead-head"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+    `;
   }
 
   /**
@@ -923,95 +939,49 @@ class AnimeStudioElement extends BaseElement {
     for (let t = 0; t <= dur; t += step) {
       const pct = (t / dur) * 100;
       html += `<div class="ruler-tick" style="left:${pct}%">${Math.round(t)}</div>`;
+      if (t + step / 2 < dur) {
+        html += `<div class="ruler-tick minor" style="left:${((t + step / 2) / dur) * 100}%"></div>`;
+      }
     }
     if (entry) {
       for (const lbl of entry.labels) {
         const pct = helpers.clamp(lbl.time / dur, 0, 1) * 100;
-        html += `<div class="ruler-label" style="left:${pct}%" title="Label '${lbl.name}' @ ${Math.round(lbl.time)}ms">◆ ${lbl.name}</div>`;
+        const align = pct < 8 ? 'translateX(0)' : pct > 92 ? 'translateX(-100%)' : 'translateX(-50%)';
+        html += `<div class="ruler-label" style="left:${pct}%;transform:${align}" title="Label '${lbl.name}' @ ${Math.round(lbl.time)}ms">◆ ${lbl.name}</div>`;
       }
       for (const call of entry.calls) {
         const pct = helpers.clamp(call.time / dur, 0, 1) * 100;
-        html += `<div class="ruler-call" style="left:${pct}%" title="Call '${call.name}' @ ${Math.round(call.time)}ms"></div>`;
+        html += `<div class="ruler-call" style="left:${pct}%" title="Callback '${call.name}' @ ${Math.round(call.time)}ms"></div>`;
       }
     }
     return html;
   }
 
   /**
-   * @param  {StudioEntry} entry
-   * @param  {StudioGroupTrack|null} selectedGroup
-   * @param  {StudioTweenTrack|null} selectedTween
-   * @param  {Number} dur
-   * @return {String}
-   */
-  _renderTracks(entry, selectedGroup, selectedTween, dur) {
-    return entry.groups.map((g, idx) => {
-      const color = SPECTRUM[idx % SPECTRUM.length];
-      const isSelected = selectedGroup && selectedGroup.uid === g.uid;
-      const expanded = this._expandedGroups.has(g.uid);
-      const startLeft = helpers.clamp(g.offset / dur, 0, 1) * 100;
-      const totalWidth = helpers.clamp((g.delay + g.duration) / dur, 0.006, 1) * 100;
-      const delayRatio = (g.delay + g.duration) > 0 ? (g.delay / (g.delay + g.duration)) * 100 : 0;
-      const sparkPath = this._buildCurvePath(g.easing.fn, 100, 20, true);
-
-      let rows = `
-        <div class="track-label-cell ${isSelected ? 'selected' : ''}" data-select-group="${g.uid}">
-          <span class="toggle-group" data-toggle-group="${g.uid}" style="color:#888;font-size:9px;width:10px">${expanded ? '▾' : '▸'}</span>
-          <span class="track-dot" style="background:${color}"></span>
-          <span class="track-name" title="${g.targetLabel}">${g.targetLabel}</span>
-          <span class="track-prop-badge">${g.tweens.length}</span>
-        </div>
-        <div class="track-lane-cell">
-          <div class="bar-wrap ${isSelected ? 'selected' : ''}" data-drag-group="${g.uid}" style="left:${startLeft}%;width:${totalWidth}%">
-            ${g.delay > 0 ? `<div class="bar-delay" style="width:${delayRatio}%"></div>` : ''}
-            <div class="bar-body" style="background:${color}">
-              <svg class="bar-spark" viewBox="0 0 100 20" preserveAspectRatio="none">
-                <path d="${sparkPath}" fill="none" stroke="#131212" stroke-width="1.6"/>
-              </svg>
-              <span class="bar-text">${Math.round(g.duration)}ms · ${g.easing.kind === 'spring' ? 'spring' : g.easing.label}</span>
-              <div class="bar-resize" data-resize-group="${g.uid}" title="Drag to stretch duration"></div>
-            </div>
-          </div>
-        </div>
-      `;
-
-      if (expanded) {
-        const subLimit = g.tweens.slice(0, 24);
-        for (const tw of subLimit) {
-          const subSel = selectedTween && selectedTween.uid === tw.uid;
-          const twLeft = helpers.clamp(tw.offset / dur, 0, 1) * 100;
-          const twWidth = helpers.clamp((tw.delay + tw.duration) / dur, 0.004, 1) * 100;
-          const twDelayPct = (tw.delay + tw.duration) > 0 ? (tw.delay / (tw.delay + tw.duration)) * 100 : 0;
-          rows += `
-            <div class="track-label-cell sub ${subSel ? 'selected' : ''}" data-select-tween="${tw.uid}" data-parent-group="${g.uid}">
-              <span class="track-name" title="${tw.targetLabel}.${tw.property}">${tw.targetLabel} · <b>${tw.property}</b></span>
-              <span class="track-prop-badge">${tw.toText}</span>
-            </div>
-            <div class="track-lane-cell sub">
-              <div class="bar-wrap ${subSel ? 'selected' : ''}" data-select-tween="${tw.uid}" data-parent-group="${g.uid}" style="left:${twLeft}%;width:${twWidth}%;cursor:pointer">
-                ${tw.delay > 0 ? `<div class="bar-delay" style="width:${twDelayPct}%"></div>` : ''}
-                <div class="bar-body" style="background:${color};opacity:0.78">
-                  <span class="bar-text" style="font-size:8px">${tw.property}: ${tw.fromText}→${tw.toText}</span>
-                </div>
-              </div>
-            </div>
-          `;
-        }
-      }
-
-      return rows;
-    }).join('');
-  }
-
-  /**
+   * Export Modal containing Video (WebM WebCodecs), PNG/Filmstrip, and Anime v4 Code / JSON Blueprint.
+   *
    * @param  {StudioEntry|null} entry
-   * @param  {StudioGroupTrack|null} group
-   * @param  {StudioTweenTrack|null} tween
+   * @param  {Number} dur
    * @param  {Number} fps
    * @return {String}
    */
-  _renderInspector(entry, group, tween, fps) {
-    if (this._tab === 'render') {
+  _renderExportModal(entry, dur, fps) {
+    let content = '';
+    if (this._exportTab === 'code') {
+      const code = this._codeMode === 'json'
+        ? JSON.stringify(codegen.generateBlueprintJSON(entry), null, 2)
+        : codegen.generateAnimeCode(entry);
+      content = `
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
+          <div class="header-group">
+            <button id="btn-code-esm" class="${this._codeMode === 'esm' ? 'active' : ''}">Anime v4 ESM</button>
+            <button id="btn-code-json" class="${this._codeMode === 'json' ? 'active' : ''}">JSON Blueprint</button>
+          </div>
+          <button id="btn-copy-code" class="primary">Copy Code</button>
+        </div>
+        <pre class="code-block">${code.replace(/</g, '&lt;')}</pre>
+      `;
+    } else {
       const filmHtml = this._renderState.filmstrip.length
         ? `<div class="filmstrip">${this._renderState.filmstrip.map(item => `
             <div class="film-thumb" data-seek-ms="${item.timeMs}">
@@ -1019,218 +989,304 @@ class AnimeStudioElement extends BaseElement {
               <span>F${item.frame} · ${Math.round(item.timeMs)}ms</span>
             </div>
           `).join('')}</div>`
-        : '<div style="color:var(--muted);font-size:10px">Capture a deterministic filmstrip or export WebM/PNG frames from any Canvas, SVG, or DOM target.</div>';
+        : '';
 
-      return `
-        <div class="form-grid">
-          <div class="field">
+      content = `
+        <div class="grid-3">
+          <div class="field-col">
             <label>Source Target</label>
             <select id="render-source">
               <option value="auto">Auto (Canvas / SVG / Body)</option>
-              <option value="canvas">First &lt;canvas&gt;</option>
+              <option value="canvas">Scene &lt;canvas&gt;</option>
               <option value="svg">First &lt;svg&gt;</option>
               <option value="body">Document Body</option>
             </select>
           </div>
-          <div class="field">
-            <label>FPS</label>
-            <input id="render-fps" type="number" min="1" max="120" value="${fps}"/>
+          <div class="field-col">
+            <label>Frame Rate (FPS)</label>
+            <input id="render-fps" type="number" min="1" max="120" value="${fps}" />
           </div>
-          <div class="field">
+          <div class="field-col">
             <label>Duration (ms)</label>
-            <input id="render-dur" type="number" min="50" step="50" value="${entry ? Math.round(this._getCycleDuration(entry.instance)) : 1000}"/>
+            <input id="render-dur" type="number" min="50" step="50" value="${entry ? Math.round(dur) : 1000}" />
           </div>
         </div>
-        <div class="btn-group" style="flex-wrap:wrap">
-          <button id="btn-filmstrip">🎞 Capture Filmstrip (8f)</button>
-          <button id="btn-export-webm" class="primary">🎬 Export WebM Video</button>
-          <button id="btn-export-pngs">🖼 Export PNG Frames</button>
+        <div class="header-group" style="flex-wrap:wrap">
+          <button id="btn-export-webm" class="success">Export WebM Video (WebCodecs)</button>
+          <button id="btn-filmstrip">Capture Filmstrip (8f)</button>
+          <button id="btn-export-pngs">Export PNG Sequence</button>
         </div>
-        ${this._renderState.status ? `<div class="status-pill">${this._renderState.status}</div>` : ''}
+        ${this._renderState.status ? `<div class="status-banner" id="export-status-banner">${this._renderState.status}</div>` : ''}
         ${this._renderState.videoUrl ? `
-          <div style="display:flex;flex-direction:column;gap:4px">
-            <video src="${this._renderState.videoUrl}" controls loop muted playsinline style="width:100%;max-height:130px;background:#000;border-radius:4px;border:1px solid var(--border)"></video>
-            <a href="${this._renderState.videoUrl}" download="anime-studio-render.webm" style="color:var(--green);font-size:10px;text-decoration:none">⬇ Download anime-studio-render.webm</a>
+          <div style="display:flex;flex-direction:column;gap:6px">
+            <video src="${this._renderState.videoUrl}" controls loop muted playsinline style="width:100%;max-height:200px;background:#090A0C;border-radius:3px;border:1px solid var(--border-subtle)"></video>
+            <a href="${this._renderState.videoUrl}" download="anime-studio-render.webm" style="color:var(--success);font-size:11px;text-decoration:none;font-weight:600">Download anime-studio-render.webm</a>
           </div>
         ` : ''}
         ${filmHtml}
       `;
     }
 
-    if (this._tab === 'code') {
-      const code = this._codeMode === 'json'
-        ? JSON.stringify(codegen.generateBlueprintJSON(entry), null, 2)
-        : codegen.generateAnimeCode(entry);
-      return `
-        <div style="display:flex;align-items:center;justify-content:space-between;gap:6px">
-          <div class="btn-group">
-            <button id="btn-code-esm" class="${this._codeMode === 'esm' ? 'active' : ''}">Anime v4 ESM</button>
-            <button id="btn-code-json" class="${this._codeMode === 'json' ? 'active' : ''}">JSON Blueprint</button>
-          </div>
-          <button id="btn-copy-code" class="primary">Copy</button>
-        </div>
-        <pre class="code-block">${code.replace(/</g, '&lt;')}</pre>
-      `;
-    }
-
-    if (!entry || !group) {
-      return '<div class="empty-state">No track selected.</div>';
-    }
-
-    if (this._tab === 'stagger') {
-      // Group tweens by target index (aggregating staggered sibling groups if created from stagger())
-      const staggerGroups = group.staggerKey
-        ? entry.groups.filter(g => g.staggerKey === group.staggerKey)
-        : [group];
-      /** @type {Map<String, { label: String, offset: Number, end: Number, target: any }>} */
-      const perTarget = new Map();
-      let maxEnd = 1;
-      for (const g of staggerGroups) {
-        for (const tw of g.tweens) {
-          const start = tw.offset + tw.delay;
-          const end = start + tw.duration;
-          if (end > maxEnd) maxEnd = end;
-          const key = staggerGroups.length > 1 ? `${g.uid}:${tw.targetIndex}` : String(tw.targetIndex);
-          const prev = perTarget.get(key);
-          if (!prev || start < prev.offset) {
-            perTarget.set(key, { label: tw.targetLabel, offset: start, end, target: tw.target });
-          }
-        }
-      }
-      const rows = Array.from(perTarget.values()).sort((a, b) => a.offset - b.offset);
-      const minStart = rows.reduce((m, r) => Math.min(m, r.offset), Infinity);
-      const maxStart = rows.reduce((m, r) => Math.max(m, r.offset), minStart + 1);
-
-      return `
-        <div style="color:var(--muted);font-size:10px">${rows.length} target(s) in "${group.targetLabel}" · Waterfall & Delay Cascade</div>
-        <div class="stagger-list">
-          ${rows.slice(0, 32).map((item, idx) => {
-            const leftPct = (item.offset / maxEnd) * 100;
-            const widthPct = Math.max(2, ((item.end - item.offset) / maxEnd) * 100);
-            const norm = (item.offset - minStart) / Math.max(1, maxStart - minStart);
-            const col = SPECTRUM[Math.min(SPECTRUM.length - 1, Math.floor(norm * (SPECTRUM.length - 1)))];
-            return `
-              <div class="stagger-row">
-                <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">#${idx} ${item.label}</span>
-                <div class="stagger-bar-bg">
-                  <div class="stagger-bar-fill" style="left:${leftPct}%;width:${widthPct}%;background:${col}"></div>
-                </div>
-                <span style="text-align:right;color:var(--muted)">+${Math.round(item.offset)}ms</span>
-              </div>
-            `;
-          }).join('')}
-        </div>
-      `;
-    }
-
-    // Default tab: 'curves'
-    const activeEase = (tween ? tween.easing : group.easing);
-    const curvePath = this._buildCurvePath(activeEase.fn, 180, 180, false);
-    const isBezier = activeEase.kind === 'bezier' && activeEase.bezier;
-    const isSpring = activeEase.kind === 'spring' && activeEase.spring;
-    const cb = isBezier ? activeEase.bezier : [0.22, 1, 0.36, 1];
-    const sp = isSpring ? activeEase.spring : { bounce: 0.45, duration: 628, settlingDuration: 628 };
-
     return `
-      <div class="form-grid">
-        <div class="field">
-          <label>Offset (ms)</label>
-          <input id="inp-offset" type="number" min="0" step="10" value="${helpers.round(group.offset, 1)}"/>
-        </div>
-        <div class="field">
-          <label>Duration (ms)</label>
-          <input id="inp-duration" type="number" min="10" step="10" value="${helpers.round(group.duration, 1)}"/>
-        </div>
-        <div class="field">
-          <label>${tween ? tween.property : 'Target'}</label>
-          <input type="text" readonly value="${tween ? `${tween.fromText} → ${tween.toText}` : group.targetLabel}"/>
-        </div>
-      </div>
-
-      <div class="preset-row">
-        ${easingsBridge.EASING_PRESETS.map(p => {
-          const active = (p.kind === 'bezier' && isBezier) || (p.kind === 'spring' && isSpring) || (p.value === activeEase.label);
-          return `<button class="ease-preset ${active ? 'active' : ''}" data-preset-kind="${p.kind}" data-preset-val="${p.value}">${p.label}</button>`;
-        }).join('')}
-      </div>
-
-      <div class="curve-box">
-        <svg class="curve-svg" id="curve-svg" viewBox="-16 -45 212 270">
-          <rect x="0" y="0" width="180" height="180" fill="rgba(255,255,255,0.02)" stroke="rgba(255,255,255,0.1)"/>
-          <line x1="0" y1="90" x2="180" y2="90" stroke="rgba(255,255,255,0.06)" stroke-dasharray="3 3"/>
-          <line x1="90" y1="0" x2="90" y2="180" stroke="rgba(255,255,255,0.06)" stroke-dasharray="3 3"/>
-          <line x1="0" y1="180" x2="180" y2="0" stroke="rgba(255,255,255,0.12)"/>
-          <path d="${curvePath}" fill="none" stroke="#3CFFEC" stroke-width="2.2"/>
-          ${isBezier ? `
-            <line x1="0" y1="180" x2="${cb[0] * 180}" y2="${180 - cb[1] * 180}" stroke="#FB89FB" stroke-width="1.2" stroke-dasharray="3 2"/>
-            <line x1="180" y1="0" x2="${cb[2] * 180}" y2="${180 - cb[3] * 180}" stroke="#F6FF56" stroke-width="1.2" stroke-dasharray="3 2"/>
-            <circle class="bezier-handle" data-handle="1" cx="${cb[0] * 180}" cy="${180 - cb[1] * 180}" r="6" fill="#FB89FB" stroke="#131212" stroke-width="1.5"/>
-            <circle class="bezier-handle" data-handle="2" cx="${cb[2] * 180}" cy="${180 - cb[3] * 180}" r="6" fill="#F6FF56" stroke="#131212" stroke-width="1.5"/>
-          ` : ''}
-          <circle id="curve-dot" cx="0" cy="180" r="4.5" fill="#FF4B4B" stroke="#F6F4F2" stroke-width="1.2"/>
-        </svg>
-        <div class="curve-meta">
-          <div style="color:var(--ink);font-weight:700;word-break:break-word">${activeEase.label}</div>
-          ${isBezier ? `
-            <div style="color:var(--muted);font-size:10px">Drag pink (P1) & yellow (P2) handles on the graph</div>
-            <div class="slider-row"><span>x1</span><input class="cb-slider" data-cb="0" type="range" min="0" max="1" step="0.01" value="${cb[0]}"><span>${helpers.round(cb[0], 2)}</span></div>
-            <div class="slider-row"><span>y1</span><input class="cb-slider" data-cb="1" type="range" min="-0.5" max="1.5" step="0.01" value="${cb[1]}"><span>${helpers.round(cb[1], 2)}</span></div>
-            <div class="slider-row"><span>x2</span><input class="cb-slider" data-cb="2" type="range" min="0" max="1" step="0.01" value="${cb[2]}"><span>${helpers.round(cb[2], 2)}</span></div>
-            <div class="slider-row"><span>y2</span><input class="cb-slider" data-cb="3" type="range" min="-0.5" max="1.5" step="0.01" value="${cb[3]}"><span>${helpers.round(cb[3], 2)}</span></div>
-          ` : isSpring ? `
-            <div class="slider-row"><span>Bounce</span><input id="sp-bounce" type="range" min="-0.5" max="0.95" step="0.01" value="${sp.bounce}"><span>${helpers.round(sp.bounce, 2)}</span></div>
-            <div class="slider-row"><span>Duration</span><input id="sp-dur" type="range" min="150" max="2000" step="10" value="${sp.duration}"><span>${Math.round(sp.duration)}</span></div>
-            <div style="color:var(--green);font-size:10px">Settling duration: ${Math.round(sp.settlingDuration)}ms</div>
-          ` : `
-            <div style="color:var(--muted);font-size:10px">Click "bezier" or "spring" above for interactive curve handle editing.</div>
-          `}
+      <div class="modal-backdrop" id="export-backdrop">
+        <div class="modal-dialog" role="dialog" aria-label="Export & Render">
+          <div class="modal-header">
+            <span>Export & Render</span>
+            <button id="btn-close-export" class="icon-btn ghost" title="Close">${icons.ICONS.close}</button>
+          </div>
+          <div class="modal-tabs">
+            <button class="modal-tab ${this._exportTab === 'video' ? 'active' : ''}" data-export-tab="video">Video & Frames</button>
+            <button class="modal-tab ${this._exportTab === 'code' ? 'active' : ''}" data-export-tab="code" data-tab="code">Code & JSON</button>
+          </div>
+          <div class="modal-body">${content}</div>
         </div>
       </div>
     `;
   }
 
   /**
+   * Wires all interactive events cleanly across Header, Left Layers, Center Canvas, Right Inspector, Timeline, and Export Modal.
+   *
    * @param  {StudioEntry|null} entry
+   * @param  {StudioLayerNode|null} layer
    * @param  {StudioGroupTrack|null} group
    * @param  {StudioTweenTrack|null} tween
    * @param  {Number} dur
+   * @param  {Number} fps
    * @return {void}
    */
-  _bindEvents(entry, group, tween, dur) {
+  _bindEvents(entry, layer, group, tween, dur, fps) {
     const s = this._shadow;
     const store = this._store;
     const studio = this._studio;
+
+    const onClick = (sel, fn) => {
+      const el = s.querySelector(sel);
+      if (el) el.addEventListener('click', fn);
+    };
+
+    // Header actions
+    onClick('#btn-undo', () => store.undo());
+    onClick('#btn-redo', () => store.redo());
+    onClick('#btn-save', () => {
+      store.markSaved(codegen.generateBlueprintJSON(entry));
+    });
+    const projInput = /** @type {HTMLInputElement|null} */(s.querySelector('#inp-project-name'));
+    if (projInput) {
+      projInput.onchange = () => store.setProjectName(projInput.value);
+    }
+
+    const sceneSel = /** @type {HTMLSelectElement|null} */(s.querySelector('#scene-select'));
+    if (sceneSel) {
+      sceneSel.onchange = () => store.selectScene(sceneSel.value);
+    }
 
     const entrySel = /** @type {HTMLSelectElement|null} */(s.querySelector('#entry-select'));
     if (entrySel) {
       entrySel.onchange = () => {
         store.selectedEntryId = entrySel.value || null;
+        store.selectedLayerId = null;
         store.selectedGroupUid = null;
         store.selectedTweenUid = null;
+        store.selectedProperty = null;
         this.render();
       };
     }
 
-    const bindClick = (sel, fn) => {
+    onClick('#btn-toggle-left', () => { this._leftCollapsed = !this._leftCollapsed; this.render(); });
+    onClick('#btn-toggle-right', () => { this._rightCollapsed = !this._rightCollapsed; this.render(); });
+    onClick('#btn-collapse', () => { this._collapsed = !this._collapsed; this.render(); });
+    onClick('#btn-open-export', () => { this._exportOpen = true; this.render(); });
+    onClick('#btn-close-export', () => { this._exportOpen = false; this.render(); });
+    const backdrop = s.querySelector('#export-backdrop');
+    if (backdrop) {
+      backdrop.addEventListener('click', ev => {
+        if (ev.target === backdrop) { this._exportOpen = false; this.render(); }
+      });
+    }
+    s.querySelectorAll('[data-export-tab]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        this._exportTab = /** @type {HTMLElement} */(btn).dataset.exportTab || 'video';
+        this.render();
+      });
+    });
+
+    // Left sidebar search & selection
+    const searchInput = /** @type {HTMLInputElement|null} */(s.querySelector('#inp-layer-search'));
+    if (searchInput) {
+      searchInput.oninput = () => {
+        const pos = searchInput.selectionStart;
+        this._layerSearch = searchInput.value;
+        this.render();
+        const fresh = /** @type {HTMLInputElement|null} */(this._shadow.querySelector('#inp-layer-search'));
+        if (fresh) {
+          fresh.focus();
+          if (pos !== null) fresh.setSelectionRange(pos, pos);
+        }
+      };
+    }
+
+    onClick('#btn-add-object', () => store.addObject());
+    onClick('#btn-clear-selection', () => {
+      store.selectedLayerId = '__none__';
+      store.selectedGroupUid = null;
+      store.selectedTweenUid = null;
+      store.selectedProperty = null;
+      this.render();
+    });
+
+    // Layer expand/collapse, visibility, lock, and selection (shared across Left Sidebar & Timeline Tree)
+    s.querySelectorAll('[data-toggle-layer]').forEach(btn => {
+      btn.addEventListener('click', ev => {
+        ev.stopPropagation();
+        const id = /** @type {HTMLElement} */(btn).dataset.toggleLayer;
+        if (this._expandedLayers.has(id)) this._expandedLayers.delete(id);
+        else this._expandedLayers.add(id);
+        this.render();
+      });
+    });
+
+    s.querySelectorAll('[data-vis-layer]').forEach(btn => {
+      btn.addEventListener('click', ev => {
+        ev.stopPropagation();
+        const id = /** @type {HTMLElement} */(btn).dataset.visLayer;
+        if (entry && id) store.toggleLayerVisibility(entry.id, id);
+      });
+    });
+
+    s.querySelectorAll('[data-lock-layer]').forEach(btn => {
+      btn.addEventListener('click', ev => {
+        ev.stopPropagation();
+        const id = /** @type {HTMLElement} */(btn).dataset.lockLayer;
+        if (entry && id) store.toggleLayerLock(entry.id, id);
+      });
+    });
+
+    s.querySelectorAll('[data-select-layer]').forEach(row => {
+      row.addEventListener('click', () => {
+        const he = /** @type {HTMLElement} */(row);
+        const lId = he.dataset.selectLayer || null;
+        const propName = he.dataset.selectProp || null;
+        const twUid = he.dataset.selectTween || null;
+        store.selectedLayerId = lId;
+        store.selectedProperty = propName;
+        store.selectedTweenUid = twUid;
+        if (entry && lId) {
+          const found = entry.layers.find(l => l.id === lId);
+          store.selectedGroupUid = found ? found.primaryGroupUid : null;
+        }
+        this.render();
+      });
+    });
+
+    // Center Canvas Toolbar & Pan/Zoom
+    onClick('#btn-canvas-grid', () => { this._showGrid = !this._showGrid; this.render(); });
+    onClick('#btn-canvas-guides', () => { this._showGuides = !this._showGuides; this.render(); });
+    onClick('#btn-canvas-pan', () => { this._panTool = !this._panTool; this.render(); });
+    onClick('#btn-inspect', () => { this._inspectTargets = !this._inspectTargets; this.render(); });
+    onClick('#btn-zoom-out', () => {
+      this._canvasZoom = helpers.clamp(helpers.round(this._canvasZoom - 0.15, 2), 0.25, 2.5);
+      this._applyCanvasTransform();
+    });
+    onClick('#btn-zoom-in', () => {
+      this._canvasZoom = helpers.clamp(helpers.round(this._canvasZoom + 0.15, 2), 0.25, 2.5);
+      this._applyCanvasTransform();
+    });
+    onClick('#btn-zoom-100', () => {
+      this._canvasZoom = 1;
+      this._canvasPanX = 0;
+      this._canvasPanY = 0;
+      this._applyCanvasTransform();
+    });
+    onClick('#btn-zoom-fit', () => this.fitCanvasToScreen());
+
+    const stageWrap = /** @type {HTMLElement|null} */(s.querySelector('#canvas-stage-wrap'));
+    if (stageWrap) {
+      stageWrap.addEventListener('wheel', ev => {
+        if (ev.ctrlKey || ev.metaKey || this._panTool) {
+          ev.preventDefault();
+          const delta = ev.deltaY > 0 ? -0.08 : 0.08;
+          this._canvasZoom = helpers.clamp(helpers.round(this._canvasZoom + delta, 2), 0.25, 2.5);
+          this._applyCanvasTransform();
+        }
+      }, { passive: false });
+
+      stageWrap.addEventListener('pointerdown', ev => {
+        const pe = /** @type {PointerEvent} */(ev);
+        if (!this._panTool && pe.button !== 1) return;
+        pe.preventDefault();
+        const sx = pe.clientX;
+        const sy = pe.clientY;
+        const ix = this._canvasPanX;
+        const iy = this._canvasPanY;
+        const onMove = mv => {
+          this._canvasPanX = ix + (mv.clientX - sx);
+          this._canvasPanY = iy + (mv.clientY - sy);
+          this._applyCanvasTransform();
+        };
+        const onUp = () => {
+          window.removeEventListener('pointermove', onMove);
+          window.removeEventListener('pointerup', onUp);
+        };
+        window.addEventListener('pointermove', onMove);
+        window.addEventListener('pointerup', onUp);
+      });
+    }
+
+    // Panel Splitters (Left, Right, Bottom Timeline)
+    const bindSplitter = (sel, axis, getInit, applyVal) => {
       const el = s.querySelector(sel);
-      if (el) el.addEventListener('click', fn);
+      if (!el) return;
+      el.addEventListener('pointerdown', ev => {
+        const pe = /** @type {PointerEvent} */(ev);
+        const startPos = axis === 'x' ? pe.clientX : pe.clientY;
+        const initVal = getInit();
+        el.classList.add('dragging');
+        const onMove = mv => {
+          const delta = (axis === 'x' ? mv.clientX : mv.clientY) - startPos;
+          applyVal(initVal, delta);
+        };
+        const onUp = () => {
+          el.classList.remove('dragging');
+          window.removeEventListener('pointermove', onMove);
+          window.removeEventListener('pointerup', onUp);
+        };
+        window.addEventListener('pointermove', onMove);
+        window.addEventListener('pointerup', onUp);
+      });
     };
 
-    bindClick('#btn-play', () => studio.togglePlay());
-    bindClick('#btn-reset', () => studio.restart());
-    bindClick('#btn-step-back', () => studio.stepFrame(-1));
-    bindClick('#btn-step-fwd', () => studio.stepFrame(1));
-    bindClick('#btn-reverse', () => studio.reverse());
-    bindClick('#btn-vclock', () => {
+    bindSplitter('#split-left', 'x', () => this._leftWidth, (init, d) => {
+      this._leftWidth = helpers.clamp(init + d, 180, 380);
+      const shell = /** @type {HTMLElement|null} */(s.querySelector('.shell-workspace'));
+      if (shell) shell.style.gridTemplateColumns = `${this._leftWidth}px 4px minmax(320px, 1fr) ${this._rightCollapsed ? '0px 0px' : `4px ${this._rightWidth}px`}`;
+    });
+    bindSplitter('#split-right', 'x', () => this._rightWidth, (init, d) => {
+      this._rightWidth = helpers.clamp(init - d, 240, 440);
+      const shell = /** @type {HTMLElement|null} */(s.querySelector('.shell-workspace'));
+      if (shell) shell.style.gridTemplateColumns = `${this._leftCollapsed ? '0px 0px' : `${this._leftWidth}px 4px`} minmax(320px, 1fr) 4px ${this._rightWidth}px`;
+    });
+    bindSplitter('#split-timeline', 'y', () => this._timelineHeight, (init, d) => {
+      this._timelineHeight = helpers.clamp(init - d, 150, Math.max(220, window.innerHeight - 280));
+      const shell = /** @type {HTMLElement|null} */(s.querySelector('.shell-workspace, .shell-dock'));
+      if (shell) shell.style.setProperty('--timeline-h', `${this._timelineHeight}px`);
+    });
+
+    // Playback Toolbar
+    onClick('#btn-play', () => studio.togglePlay());
+    onClick('#btn-reset', () => studio.restart());
+    onClick('#btn-step-back', () => studio.stepFrame(-1));
+    onClick('#btn-step-fwd', () => studio.stepFrame(1));
+    onClick('#btn-reverse', () => studio.reverse());
+    onClick('#btn-loop', () => {
+      if (entry) {
+        const isInf = entry.instance.iterationCount === Infinity;
+        entry.instance.iterationCount = isInf ? 1 : Infinity;
+        this.render();
+      }
+    });
+    onClick('#btn-vclock', () => {
       studio.setVirtualClock(!engine.engine.isVirtual);
-      this.render();
-    });
-    bindClick('#btn-inspect', () => {
-      this._inspectTargets = !this._inspectTargets;
-      this.render();
-    });
-    bindClick('#btn-collapse', () => {
-      this._collapsed = !this._collapsed;
       this.render();
     });
 
@@ -1251,46 +1307,49 @@ class AnimeStudioElement extends BaseElement {
       });
     });
 
-    s.querySelectorAll('[data-tab]').forEach(btn => {
-      btn.addEventListener('click', () => {
-        this._tab = /** @type {HTMLElement} */(btn).dataset.tab || 'curves';
-        this.render();
-      });
-    });
-
-    const zoomRange = /** @type {HTMLInputElement|null} */(s.querySelector('#zoom-range'));
-    if (zoomRange) {
-      zoomRange.oninput = () => {
-        this._zoom = Number(zoomRange.value) || 1;
+    const trackSizeSel = /** @type {HTMLSelectElement|null} */(s.querySelector('#track-size-select'));
+    if (trackSizeSel) {
+      trackSizeSel.onchange = () => {
+        this._trackSize = trackSizeSel.value;
         this.render();
       };
     }
 
-    // Resize dock height
-    const resizeHandle = s.querySelector('#resize-handle');
-    if (resizeHandle) {
-      resizeHandle.addEventListener('pointerdown', ev => {
-        const startY = /** @type {PointerEvent} */(ev).clientY;
-        const startH = this._height;
-        const onMove = mv => {
-          this._height = helpers.clamp(startH + (startY - mv.clientY), 160, Math.max(260, window.innerHeight - 120));
-          const body = /** @type {HTMLElement|null} */(s.querySelector('.body'));
-          if (body) body.style.setProperty('--studio-height', `${this._height}px`);
-        };
-        const onUp = () => {
-          window.removeEventListener('pointermove', onMove);
-          window.removeEventListener('pointerup', onUp);
-        };
-        window.addEventListener('pointermove', onMove);
-        window.addEventListener('pointerup', onUp);
+    const zoomRange = /** @type {HTMLInputElement|null} */(s.querySelector('#zoom-range'));
+    if (zoomRange) {
+      zoomRange.oninput = () => {
+        this._tlZoom = Number(zoomRange.value) || 1;
+        this.render();
+      };
+    }
+    onClick('#btn-tl-zoom-out', () => { this._tlZoom = helpers.clamp(helpers.round(this._tlZoom - 0.25, 2), 1, 5); this.render(); });
+    onClick('#btn-tl-zoom-in', () => { this._tlZoom = helpers.clamp(helpers.round(this._tlZoom + 0.25, 2), 1, 5); this.render(); });
+
+    // Sync Timeline Tree & Lanes vertical scroll
+    const treeBody = /** @type {HTMLElement|null} */(s.querySelector('#tl-tree-body'));
+    const lanesPane = /** @type {HTMLElement|null} */(s.querySelector('#tl-lanes-pane'));
+    if (treeBody && lanesPane) {
+      let syncing = false;
+      treeBody.addEventListener('scroll', () => {
+        if (syncing) return;
+        syncing = true;
+        lanesPane.scrollTop = treeBody.scrollTop;
+        syncing = false;
+      });
+      lanesPane.addEventListener('scroll', () => {
+        if (syncing) return;
+        syncing = true;
+        treeBody.scrollTop = lanesPane.scrollTop;
+        syncing = false;
       });
     }
 
     // Ruler scrub
     const ruler = /** @type {HTMLElement|null} */(s.querySelector('#ruler-track'));
-    if (ruler && entry) {
+    const rulerCoords = /** @type {HTMLElement|null} */(s.querySelector('#ruler-coords')) || ruler;
+    if (ruler && rulerCoords && entry) {
       const scrubAt = clientX => {
-        const rect = ruler.getBoundingClientRect();
+        const rect = rulerCoords.getBoundingClientRect();
         const ratio = helpers.clamp((clientX - rect.left) / Math.max(1, rect.width), 0, 1);
         studio.seek(ratio * dur);
       };
@@ -1307,104 +1366,195 @@ class AnimeStudioElement extends BaseElement {
       });
     }
 
-    // Select & toggle groups / sub-tweens
-    s.querySelectorAll('[data-toggle-group]').forEach(el => {
-      el.addEventListener('click', ev => {
-        ev.stopPropagation();
-        const uid = /** @type {HTMLElement} */(el).dataset.toggleGroup;
-        if (this._expandedGroups.has(uid)) this._expandedGroups.delete(uid);
-        else this._expandedGroups.add(uid);
-        this.render();
-      });
-    });
-
-    s.querySelectorAll('[data-select-group]').forEach(el => {
-      el.addEventListener('click', () => {
-        store.selectedGroupUid = /** @type {HTMLElement} */(el).dataset.selectGroup || null;
-        store.selectedTweenUid = null;
-        this.render();
-      });
-    });
-
-    s.querySelectorAll('[data-select-tween]').forEach(el => {
-      el.addEventListener('click', () => {
-        const he = /** @type {HTMLElement} */(el);
-        store.selectedGroupUid = he.dataset.parentGroup || null;
-        store.selectedTweenUid = he.dataset.selectTween || null;
-        this.render();
-      });
-    });
-
-    // Drag bar horizontally to shift offset, or drag right edge to stretch duration
+    // Drag layer/clip horizontally or resize right handle (batched into 1 Undo entry!)
     if (entry) {
-      s.querySelectorAll('[data-drag-group]').forEach(barEl => {
+      s.querySelectorAll('.bar-wrap').forEach(barEl => {
         barEl.addEventListener('pointerdown', ev => {
           const pe = /** @type {PointerEvent} */(ev);
-          const uid = /** @type {HTMLElement} */(barEl).dataset.dragGroup;
-          const g = entry.groups.find(item => item.uid === uid);
-          if (!g) return;
-          store.selectedGroupUid = uid;
-          store.selectedTweenUid = null;
+          const he = /** @type {HTMLElement} */(barEl);
+          const lId = he.dataset.dragLayer || he.dataset.selectLayer;
+          const gUid = he.dataset.dragGroup;
+          const propName = he.dataset.selectProp || null;
+          const twUid = he.dataset.selectTween || null;
+
+          if (lId) {
+            store.selectedLayerId = lId;
+            store.selectedProperty = propName;
+            store.selectedTweenUid = twUid;
+            const foundLayer = entry.layers.find(l => l.id === lId);
+            if (foundLayer && foundLayer.locked) {
+              this.render();
+              return;
+            }
+            if (foundLayer && !gUid) store.selectedGroupUid = foundLayer.primaryGroupUid;
+          }
+          if (gUid) store.selectedGroupUid = gUid;
 
           const isResize = /** @type {HTMLElement} */(pe.target).classList.contains('bar-resize');
           const lane = barEl.parentElement;
           const laneWidth = lane ? lane.getBoundingClientRect().width : 400;
           const startX = pe.clientX;
-          const initOffset = g.offset;
-          const initDur = g.duration;
+          let lastAppliedDelta = 0;
 
-          const onMove = mv => {
-            const dx = mv.clientX - startX;
-            const deltaMs = (dx / Math.max(1, laneWidth)) * dur;
-            if (isResize) {
-              store.updateGroupDuration(entry.id, uid, initDur + deltaMs);
-            } else {
-              store.updateGroupOffset(entry.id, uid, initOffset + deltaMs);
-            }
-          };
-          const onUp = () => {
-            window.removeEventListener('pointermove', onMove);
-            window.removeEventListener('pointerup', onUp);
-          };
-          window.addEventListener('pointermove', onMove);
-          window.addEventListener('pointerup', onUp);
+          if (isResize && gUid) {
+            const targetGroup = entry.groups.find(g => g.uid === gUid);
+            if (!targetGroup) return;
+            const initDur = targetGroup.duration;
+            store.beginBatch(`Resize ${targetGroup.targetLabel}`);
+            this._suspendStoreRender = true;
+            const onMove = mv => {
+              const deltaMs = ((mv.clientX - startX) / Math.max(1, laneWidth)) * dur;
+              store.updateGroupDuration(entry.id, gUid, initDur + deltaMs);
+              barEl.setAttribute('style', `left:${helpers.clamp(targetGroup.offset / dur, 0, 1) * 100}%;width:${helpers.clamp((targetGroup.delay + targetGroup.duration) / dur, 0.008, 1) * 100}%`);
+            };
+            const onUp = () => {
+              this._suspendStoreRender = false;
+              store.commitBatch();
+              window.removeEventListener('pointermove', onMove);
+              window.removeEventListener('pointerup', onUp);
+              this.render();
+            };
+            window.addEventListener('pointermove', onMove);
+            window.addEventListener('pointerup', onUp);
+          } else if (lId && he.dataset.dragLayer) {
+            const targetLayer = entry.layers.find(l => l.id === lId);
+            if (!targetLayer) return;
+            const initLeft = targetLayer.offset;
+            const spanW = targetLayer.endTime - targetLayer.offset;
+            store.beginBatch(`Move ${targetLayer.name}`);
+            this._suspendStoreRender = true;
+            const onMove = mv => {
+              const deltaMs = ((mv.clientX - startX) / Math.max(1, laneWidth)) * dur;
+              const inc = deltaMs - lastAppliedDelta;
+              if (Math.abs(inc) >= 1) {
+                store.shiftLayerOffset(entry.id, lId, inc);
+                lastAppliedDelta += inc;
+                const clampedOff = Math.max(0, initLeft + lastAppliedDelta);
+                he.style.left = `${helpers.clamp(clampedOff / dur, 0, 1) * 100}%`;
+                he.style.width = `${helpers.clamp(spanW / dur, 0.008, 1) * 100}%`;
+              }
+            };
+            const onUp = () => {
+              this._suspendStoreRender = false;
+              store.commitBatch();
+              window.removeEventListener('pointermove', onMove);
+              window.removeEventListener('pointerup', onUp);
+              this.render();
+            };
+            window.addEventListener('pointermove', onMove);
+            window.addEventListener('pointerup', onUp);
+          } else {
+            this.render();
+          }
         });
       });
     }
 
-    // Inspector numeric edits
+    // Inspector Collapsible Section toggles
+    s.querySelectorAll('[data-toggle-section]').forEach(head => {
+      head.addEventListener('click', () => {
+        const secId = /** @type {HTMLElement} */(head).dataset.toggleSection;
+        if (this._collapsedSections.has(secId)) this._collapsedSections.delete(secId);
+        else this._collapsedSections.add(secId);
+        this.render();
+      });
+    });
+
+    // Inspector Property From/To edits (Transform & Animation)
+    if (entry && layer && !layer.locked) {
+      s.querySelectorAll('[data-prop-from]').forEach(inp => {
+        const inputEl = /** @type {HTMLInputElement} */(inp);
+        inputEl.onchange = () => {
+          const prop = inputEl.dataset.propFrom;
+          const val = Number(inputEl.value);
+          if (prop && Number.isFinite(val)) {
+            store.updateTweenValues(entry.id, layer.groupUids, prop, { from: val });
+          }
+        };
+      });
+      s.querySelectorAll('[data-prop-to]').forEach(inp => {
+        const inputEl = /** @type {HTMLInputElement} */(inp);
+        inputEl.onchange = () => {
+          const prop = inputEl.dataset.propTo;
+          const val = Number(inputEl.value);
+          if (prop && Number.isFinite(val)) {
+            store.updateTweenValues(entry.id, layer.groupUids, prop, { to: val });
+          }
+        };
+      });
+    }
+
+    // Timing numeric inputs
     const inpOffset = /** @type {HTMLInputElement|null} */(s.querySelector('#inp-offset'));
-    if (inpOffset && entry && group) {
+    if (inpOffset && entry && group && layer && !layer.locked) {
       inpOffset.onchange = () => store.updateGroupOffset(entry.id, group.uid, Number(inpOffset.value));
     }
     const inpDur = /** @type {HTMLInputElement|null} */(s.querySelector('#inp-duration'));
-    if (inpDur && entry && group) {
+    if (inpDur && entry && group && layer && !layer.locked) {
       inpDur.onchange = () => store.updateGroupDuration(entry.id, group.uid, Number(inpDur.value));
     }
 
-    // Easing presets
-    if (entry && group) {
+    // Easing presets & live interactive Cubic Bezier / Spring editing
+    if (entry && group && layer && !layer.locked) {
+      const targetGroupUids = layer.groupUids;
       s.querySelectorAll('.ease-preset').forEach(btn => {
         btn.addEventListener('click', () => {
           const he = /** @type {HTMLElement} */(btn);
           const kind = /** @type {'ease'|'bezier'|'spring'} */(he.dataset.presetKind || 'ease');
           const value = he.dataset.presetVal || 'out(2)';
-          store.updateEasing(entry.id, group.uid, tween ? tween.uid : null, { kind, value }, true);
+          store.updateEasing(entry.id, group.uid, tween ? tween.uid : null, { kind, value }, true, targetGroupUids);
         });
       });
 
-      // Cubic bezier sliders & draggable SVG handles
       const activeEase = tween ? tween.easing : group.easing;
+
+      const updateCurveVisualInPlace = (nextEaseFn, labelText, cbCoords) => {
+        const pathEl = s.querySelector('#curve-main-path');
+        const lblEl = s.querySelector('#ease-label-readout');
+        if (pathEl) pathEl.setAttribute('d', this._buildCurvePath(nextEaseFn, 160, 110, false, 20));
+        if (lblEl) lblEl.textContent = labelText;
+        if (cbCoords) {
+          const l1 = s.querySelector('#cb-line-1');
+          const l2 = s.querySelector('#cb-line-2');
+          const h1 = s.querySelector('[data-handle="1"]');
+          const h2 = s.querySelector('[data-handle="2"]');
+          const x1 = cbCoords[0] * 160;
+          const y1 = 130 - cbCoords[1] * 110;
+          const x2 = cbCoords[2] * 160;
+          const y2 = 130 - cbCoords[3] * 110;
+          if (l1) { l1.setAttribute('x2', String(x1)); l1.setAttribute('y2', String(y1)); }
+          if (l2) { l2.setAttribute('x2', String(x2)); l2.setAttribute('y2', String(y2)); }
+          if (h1) { h1.setAttribute('cx', String(x1)); h1.setAttribute('cy', String(y1)); }
+          if (h2) { h2.setAttribute('cx', String(x2)); h2.setAttribute('cy', String(y2)); }
+          for (let i = 0; i < 4; i++) {
+            const spVal = s.querySelector(`#cb-val-${i}`);
+            if (spVal) spVal.textContent = String(helpers.round(cbCoords[i], 2));
+          }
+        }
+      };
+
       if (activeEase.kind === 'bezier' && activeEase.bezier) {
         const cb = [...activeEase.bezier];
         s.querySelectorAll('.cb-slider').forEach(inp => {
-          inp.addEventListener('input', () => {
-            const idx = Number(/** @type {HTMLElement} */(inp).dataset.cb);
-            cb[idx] = Number(/** @type {HTMLInputElement} */(inp).value);
+          const slider = /** @type {HTMLInputElement} */(inp);
+          slider.addEventListener('pointerdown', () => {
+            store.beginBatch('Edit Cubic Bezier');
+            this._suspendStoreRender = true;
+          });
+          slider.addEventListener('input', () => {
+            const idx = Number(slider.dataset.cb);
+            cb[idx] = Number(slider.value);
             store.updateEasing(entry.id, group.uid, tween ? tween.uid : null, {
               kind: 'bezier',
               bezier: /** @type {[Number, Number, Number, Number]} */(cb),
-            }, true);
+            }, true, targetGroupUids);
+            const curEase = store.getSelection().group?.easing;
+            if (curEase) updateCurveVisualInPlace(curEase.fn, curEase.label, cb);
+          });
+          slider.addEventListener('change', () => {
+            this._suspendStoreRender = false;
+            store.commitBatch();
+            this.render();
           });
         });
 
@@ -1414,22 +1564,29 @@ class AnimeStudioElement extends BaseElement {
             h.addEventListener('pointerdown', ev => {
               const handleIdx = Number(/** @type {HTMLElement} */(h).dataset.handle);
               const rect = svg.getBoundingClientRect();
+              store.beginBatch('Drag Bezier Handle');
+              this._suspendStoreRender = true;
               const updateFromPointer = mv => {
-                // Map screen coords into SVG viewBox (-16 -45 212 270) where graph box is (0..180, 0..180)
-                const vbX = ((mv.clientX - rect.left) / rect.width) * 212 - 16;
-                const vbY = ((mv.clientY - rect.top) / rect.height) * 270 - 45;
-                const nx = helpers.round(helpers.clamp(vbX / 180, 0, 1), 2);
-                const ny = helpers.round(helpers.clamp((180 - vbY) / 180, -0.5, 1.5), 2);
+                // SVG viewBox is (-12 -8 184 166) with curve box (0..160, 20..130)
+                const vbX = ((mv.clientX - rect.left) / rect.width) * 184 - 12;
+                const vbY = ((mv.clientY - rect.top) / rect.height) * 166 - 8;
+                const nx = helpers.round(helpers.clamp(vbX / 160, 0, 1), 2);
+                const ny = helpers.round(helpers.clamp((130 - vbY) / 110, -0.4, 1.4), 2);
                 if (handleIdx === 1) { cb[0] = nx; cb[1] = ny; }
                 else { cb[2] = nx; cb[3] = ny; }
                 store.updateEasing(entry.id, group.uid, tween ? tween.uid : null, {
                   kind: 'bezier',
                   bezier: /** @type {[Number, Number, Number, Number]} */(cb),
-                }, true);
+                }, true, targetGroupUids);
+                const curEase = store.getSelection().group?.easing;
+                if (curEase) updateCurveVisualInPlace(curEase.fn, curEase.label, cb);
               };
               const onUp = () => {
+                this._suspendStoreRender = false;
+                store.commitBatch();
                 window.removeEventListener('pointermove', updateFromPointer);
                 window.removeEventListener('pointerup', onUp);
+                this.render();
               };
               window.addEventListener('pointermove', updateFromPointer);
               window.addEventListener('pointerup', onUp);
@@ -1438,166 +1595,215 @@ class AnimeStudioElement extends BaseElement {
         }
       }
 
-      // Spring live sliders
+      // Physics / Spring controls
       const spBounce = /** @type {HTMLInputElement|null} */(s.querySelector('#sp-bounce'));
       const spDur = /** @type {HTMLInputElement|null} */(s.querySelector('#sp-dur'));
+      const spMass = /** @type {HTMLInputElement|null} */(s.querySelector('#sp-mass'));
+      const spStiff = /** @type {HTMLInputElement|null} */(s.querySelector('#sp-stiffness'));
+      const spDamp = /** @type {HTMLInputElement|null} */(s.querySelector('#sp-damping'));
+
+      onClick('#btn-enable-spring', () => {
+        store.updateEasing(entry.id, group.uid, tween ? tween.uid : null, {
+          kind: 'spring',
+          spring: {
+            bounce: spBounce ? Number(spBounce.value) : 0.45,
+            duration: spDur ? Number(spDur.value) : 628,
+          },
+        }, true, targetGroupUids);
+      });
+
       if (spBounce && spDur) {
-        const applySpring = () => {
+        const applyBD = () => {
           store.updateEasing(entry.id, group.uid, tween ? tween.uid : null, {
             kind: 'spring',
             spring: { bounce: Number(spBounce.value), duration: Number(spDur.value) },
-          }, true);
+          }, true, targetGroupUids);
         };
-        spBounce.oninput = applySpring;
-        spDur.oninput = applySpring;
+        [spBounce, spDur].forEach(sl => {
+          sl.addEventListener('pointerdown', () => {
+            store.beginBatch('Adjust Spring');
+            this._suspendStoreRender = true;
+          });
+          sl.addEventListener('input', () => {
+            applyBD();
+            const curEase = store.getSelection().group?.easing;
+            if (curEase) updateCurveVisualInPlace(curEase.fn, curEase.label, null);
+            const bv = s.querySelector('#sp-bounce-val');
+            const dv = s.querySelector('#sp-dur-val');
+            if (bv) bv.textContent = String(helpers.round(Number(spBounce.value), 2));
+            if (dv) dv.textContent = String(Math.round(Number(spDur.value)));
+          });
+          sl.addEventListener('change', () => {
+            this._suspendStoreRender = false;
+            store.commitBatch();
+            this.render();
+          });
+        });
+      }
+
+      if (spMass && spStiff && spDamp) {
+        const applyMSD = () => {
+          store.updateEasing(entry.id, group.uid, tween ? tween.uid : null, {
+            kind: 'spring',
+            spring: {
+              mass: Number(spMass.value),
+              stiffness: Number(spStiff.value),
+              damping: Number(spDamp.value),
+            },
+          }, true, targetGroupUids);
+        };
+        spMass.onchange = applyMSD;
+        spStiff.onchange = applyMSD;
+        spDamp.onchange = applyMSD;
       }
     }
 
-    // Code tab buttons
-    bindClick('#btn-code-esm', () => { this._codeMode = 'esm'; this.render(); });
-    bindClick('#btn-code-json', () => { this._codeMode = 'json'; this.render(); });
-    bindClick('#btn-copy-code', async () => {
-      const code = this._codeMode === 'json'
-        ? JSON.stringify(codegen.generateBlueprintJSON(entry), null, 2)
-        : codegen.generateAnimeCode(entry);
-      if (navigator.clipboard && navigator.clipboard.writeText) {
-        await navigator.clipboard.writeText(code);
-        const btn = s.querySelector('#btn-copy-code');
-        if (btn) {
-          btn.textContent = 'Copied!';
-          setTimeout(() => { if (btn) btn.textContent = 'Copy'; }, 1200);
+    // Export Modal (Code + WebM + PNGs + Filmstrip)
+    if (this._exportOpen) {
+      onClick('#btn-code-esm', () => { this._codeMode = 'esm'; this.render(); });
+      onClick('#btn-code-json', () => { this._codeMode = 'json'; this.render(); });
+      onClick('#btn-copy-code', async () => {
+        const code = this._codeMode === 'json'
+          ? JSON.stringify(codegen.generateBlueprintJSON(entry), null, 2)
+          : codegen.generateAnimeCode(entry);
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          await navigator.clipboard.writeText(code);
+          const btn = s.querySelector('#btn-copy-code');
+          if (btn) {
+            btn.textContent = 'Copied!';
+            setTimeout(() => { if (btn) btn.textContent = 'Copy Code'; }, 1200);
+          }
         }
-      }
-    });
+      });
 
-    // Render / Export tab buttons
-    const resolveRenderTargets = () => {
-      const studioFps = studio ? studio.fps : 60;
-      const srcMode = /** @type {HTMLSelectElement|null} */(s.querySelector('#render-source'))?.value || 'auto';
-      const rf = Number(/** @type {HTMLInputElement|null} */(s.querySelector('#render-fps'))?.value || studioFps);
-      const rDur = Number(/** @type {HTMLInputElement|null} */(s.querySelector('#render-dur'))?.value || dur);
-      const canvasEl = /** @type {HTMLCanvasElement|null} */(consts.doc.querySelector('canvas'));
-      const svgEl = /** @type {SVGElement|null} */(consts.doc.querySelector('svg:not(.curve-svg):not(.bar-spark)'));
-      /** @type {HTMLCanvasElement|null} */
-      let canvas = null;
-      /** @type {HTMLElement|SVGElement|null} */
-      let domTarget = null;
-      if (srcMode === 'canvas' || (srcMode === 'auto' && canvasEl)) {
-        canvas = canvasEl;
-      } else if (srcMode === 'svg' || (srcMode === 'auto' && svgEl)) {
-        domTarget = svgEl;
-      } else {
-        domTarget = consts.doc.body;
-      }
-      return {
-        fps: rf,
-        duration: rDur,
-        canvas,
-        domTarget,
-        width: canvas ? canvas.width : (domTarget ? Math.max(320, Math.round(domTarget.getBoundingClientRect().width)) : 1280),
-        height: canvas ? canvas.height : (domTarget ? Math.max(240, Math.round(domTarget.getBoundingClientRect().height)) : 720),
+      const resolveRenderTargets = () => {
+        const studioFps = studio ? studio.fps : 60;
+        const srcMode = /** @type {HTMLSelectElement|null} */(s.querySelector('#render-source'))?.value || 'auto';
+        const rf = Number(/** @type {HTMLInputElement|null} */(s.querySelector('#render-fps'))?.value || studioFps);
+        const rDur = Number(/** @type {HTMLInputElement|null} */(s.querySelector('#render-dur'))?.value || dur);
+        const canvasEl = /** @type {HTMLCanvasElement|null} */(consts.doc.querySelector('canvas'));
+        const svgEl = /** @type {SVGElement|null} */(consts.doc.querySelector('svg:not(.curve-svg):not(.bar-spark)'));
+        /** @type {HTMLCanvasElement|null} */
+        let canvas = null;
+        /** @type {HTMLElement|SVGElement|null} */
+        let domTarget = null;
+        if (srcMode === 'canvas' || (srcMode === 'auto' && canvasEl)) {
+          canvas = canvasEl;
+        } else if (srcMode === 'svg' || (srcMode === 'auto' && svgEl)) {
+          domTarget = svgEl;
+        } else {
+          domTarget = consts.doc.body;
+        }
+        return {
+          fps: rf,
+          duration: rDur,
+          canvas,
+          domTarget,
+          width: canvas ? canvas.width : (domTarget ? Math.max(320, Math.round(domTarget.getBoundingClientRect().width)) : 1280),
+          height: canvas ? canvas.height : (domTarget ? Math.max(240, Math.round(domTarget.getBoundingClientRect().height)) : 720),
+        };
       };
-    };
 
-    bindClick('#btn-filmstrip', async () => {
-      if (!entry) return;
-      const cfg = resolveRenderTargets();
-      this._renderState.status = 'Capturing deterministic filmstrip...';
-      this.render();
-      const session$1 = session.createRenderSession({
-        target: entry.instance,
-        fps: cfg.fps,
-        duration: cfg.duration,
-        canvas: cfg.canvas || undefined,
-        domTarget: cfg.canvas ? undefined : cfg.domTarget,
-        width: cfg.width,
-        height: cfg.height,
-        background: cfg.canvas ? undefined : '#131212',
-      });
-      try {
-        const thumbs = [];
-        const steps = 8;
-        for (let i = 0; i < steps; i++) {
-          const f = Math.round((i / Math.max(1, steps - 1)) * Math.max(0, session$1.totalFrames - 1));
-          const info = session$1.seekFrame(f, false);
-          const snap = await session$1._snapshotCurrentCanvas();
-          const url = /** @type {HTMLCanvasElement} */(snap).toDataURL ? /** @type {HTMLCanvasElement} */(snap).toDataURL('image/png') : '';
-          thumbs.push({ frame: info.frame, timeMs: info.timeMs, url });
-        }
-        this._renderState.filmstrip = thumbs;
-        this._renderState.status = `Captured ${thumbs.length} deterministic frames @ ${cfg.fps}fps`;
-      } catch (err) {
-        this._renderState.status = `Error: ${err.message}`;
-      } finally {
-        session$1.dispose();
+      onClick('#btn-filmstrip', async () => {
+        if (!entry) return;
+        const cfg = resolveRenderTargets();
+        this._renderState.status = 'Capturing deterministic filmstrip...';
         this.render();
-      }
-    });
-
-    s.querySelectorAll('[data-seek-ms]').forEach(el => {
-      el.addEventListener('click', () => {
-        const t = Number(/** @type {HTMLElement} */(el).dataset.seekMs || 0);
-        studio.seek(t);
-      });
-    });
-
-    bindClick('#btn-export-webm', async () => {
-      if (!entry) return;
-      const cfg = resolveRenderTargets();
-      this._renderState.status = 'Encoding WebM via WebCodecs...';
-      this.render();
-      const session$1 = session.createRenderSession({
-        target: entry.instance,
-        fps: cfg.fps,
-        duration: cfg.duration,
-        canvas: cfg.canvas || undefined,
-        domTarget: cfg.canvas ? undefined : cfg.domTarget,
-        width: cfg.width,
-        height: cfg.height,
-        background: cfg.canvas ? undefined : '#131212',
-      });
-      try {
-        const res = await session$1.exportWebM({
-          onProgress: p => {
-            const pill = s.querySelector('.status-pill');
-            if (pill) pill.textContent = `Encoding WebM: ${Math.round(p * 100)}%`;
-          },
+        const session$1 = session.createRenderSession({
+          target: entry.instance,
+          fps: cfg.fps,
+          duration: cfg.duration,
+          canvas: cfg.canvas || undefined,
+          domTarget: cfg.canvas ? undefined : cfg.domTarget,
+          width: cfg.width,
+          height: cfg.height,
+          background: cfg.canvas ? undefined : '#111317',
         });
-        this._renderState.videoUrl = res.url;
-        this._renderState.status = `Exported ${res.frames} frames (${res.codec}, ${(res.blob.size / 1024).toFixed(1)} KB)`;
-      } catch (err) {
-        this._renderState.status = `WebM Error: ${err.message}`;
-      } finally {
-        session$1.dispose();
-        this.render();
-      }
-    });
-
-    bindClick('#btn-export-pngs', async () => {
-      if (!entry) return;
-      const cfg = resolveRenderTargets();
-      this._renderState.status = 'Exporting PNG frames...';
-      this.render();
-      const session$1 = session.createRenderSession({
-        target: entry.instance,
-        fps: cfg.fps,
-        duration: cfg.duration,
-        canvas: cfg.canvas || undefined,
-        domTarget: cfg.canvas ? undefined : cfg.domTarget,
-        width: cfg.width,
-        height: cfg.height,
-        background: cfg.canvas ? undefined : '#131212',
+        try {
+          const thumbs = [];
+          const steps = 8;
+          for (let i = 0; i < steps; i++) {
+            const f = Math.round((i / Math.max(1, steps - 1)) * Math.max(0, session$1.totalFrames - 1));
+            const info = session$1.seekFrame(f, false);
+            const snap = await session$1._snapshotCurrentCanvas();
+            const url = /** @type {HTMLCanvasElement} */(snap).toDataURL ? /** @type {HTMLCanvasElement} */(snap).toDataURL('image/png') : '';
+            thumbs.push({ frame: info.frame, timeMs: info.timeMs, url });
+          }
+          this._renderState.filmstrip = thumbs;
+          this._renderState.status = `Captured ${thumbs.length} deterministic frames @ ${cfg.fps}fps`;
+        } catch (err) {
+          this._renderState.status = `Error: ${err.message}`;
+        } finally {
+          session$1.dispose();
+          this.render();
+        }
       });
-      try {
-        const frames = await session$1.exportFrames({ format: 'png' });
-        this._renderState.status = `Rendered ${frames.length} PNG frame Blobs (${Math.round(frames.reduce((a, f) => a + f.blob.size, 0) / 1024)} KB total)`;
-      } catch (err) {
-        this._renderState.status = `PNG Error: ${err.message}`;
-      } finally {
-        session$1.dispose();
+
+      s.querySelectorAll('[data-seek-ms]').forEach(el => {
+        el.addEventListener('click', () => {
+          const t = Number(/** @type {HTMLElement} */(el).dataset.seekMs || 0);
+          studio.seek(t);
+        });
+      });
+
+      onClick('#btn-export-webm', async () => {
+        if (!entry) return;
+        const cfg = resolveRenderTargets();
+        this._renderState.status = 'Encoding WebM via WebCodecs...';
         this.render();
-      }
-    });
+        const session$1 = session.createRenderSession({
+          target: entry.instance,
+          fps: cfg.fps,
+          duration: cfg.duration,
+          canvas: cfg.canvas || undefined,
+          domTarget: cfg.canvas ? undefined : cfg.domTarget,
+          width: cfg.width,
+          height: cfg.height,
+          background: cfg.canvas ? undefined : '#111317',
+        });
+        try {
+          const res = await session$1.exportWebM({
+            onProgress: p => {
+              const banner = s.querySelector('#export-status-banner');
+              if (banner) banner.textContent = `Encoding WebM: ${Math.round(p * 100)}%`;
+            },
+          });
+          this._renderState.videoUrl = res.url;
+          this._renderState.status = `Exported ${res.frames} frames (${res.codec}, ${(res.blob.size / 1024).toFixed(1)} KB)`;
+        } catch (err) {
+          this._renderState.status = `WebM Error: ${err.message}`;
+        } finally {
+          session$1.dispose();
+          this.render();
+        }
+      });
+
+      onClick('#btn-export-pngs', async () => {
+        if (!entry) return;
+        const cfg = resolveRenderTargets();
+        this._renderState.status = 'Exporting PNG frames...';
+        this.render();
+        const session$1 = session.createRenderSession({
+          target: entry.instance,
+          fps: cfg.fps,
+          duration: cfg.duration,
+          canvas: cfg.canvas || undefined,
+          domTarget: cfg.canvas ? undefined : cfg.domTarget,
+          width: cfg.width,
+          height: cfg.height,
+          background: cfg.canvas ? undefined : '#111317',
+        });
+        try {
+          const frames = await session$1.exportFrames({ format: 'png' });
+          this._renderState.status = `Rendered ${frames.length} PNG frame Blobs (${Math.round(frames.reduce((a, f) => a + f.blob.size, 0) / 1024)} KB total)`;
+        } catch (err) {
+          this._renderState.status = `PNG Error: ${err.message}`;
+        } finally {
+          session$1.dispose();
+          this.render();
+        }
+      });
+    }
   }
 }
 

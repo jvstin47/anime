@@ -2,154 +2,80 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>Anime Studio & Render Workbench / Anime.js</title>
+  <title>Anime.js V4 Studio — Motion Editor Workbench</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     html, body {
+      width: 100%;
       height: 100%;
-      background: #0F0E0E;
-      color: #F6F4F2;
-      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
       overflow: hidden;
+      background: #0D0E10;
+      color: #ECEEF2;
+      font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     }
-    .topbar {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 10px 18px;
-      border-bottom: 1px solid rgba(246, 244, 242, 0.1);
-      background: #161515;
+
+    /* Slotted 960x540 composition stage inside <anime-studio mode="workspace"> */
+    .composition-stage {
+      position: relative;
+      width: 960px;
+      height: 540px;
+      overflow: hidden;
+      background: #111317;
     }
-    .topbar h1 {
-      font-size: 13px;
-      letter-spacing: 0.08em;
-      text-transform: uppercase;
+
+    canvas#scene {
+      display: block;
+      width: 960px;
+      height: 540px;
+    }
+
+    /* Synchronized composition-space DOM layers inside the 960x540 frame */
+    .stage-hud-overlay {
+      position: absolute;
+      left: 24px;
+      bottom: 20px;
       display: flex;
       align-items: center;
       gap: 10px;
+      pointer-events: none;
     }
-    .badge {
-      font-size: 10px;
-      padding: 2px 7px;
-      border-radius: 999px;
-      background: rgba(24, 255, 116, 0.15);
-      color: #18FF74;
-      border: 1px solid rgba(24, 255, 116, 0.35);
-    }
-    .actions {
-      display: flex;
-      gap: 8px;
-      align-items: center;
-    }
-    .actions button {
-      background: #242222;
-      color: #F6F4F2;
-      border: 1px solid rgba(246, 244, 242, 0.16);
-      border-radius: 5px;
-      padding: 5px 10px;
-      font-family: inherit;
+    .stage-tag {
+      background: rgba(13, 14, 16, 0.85);
+      border: 1px solid #313640;
+      border-radius: 3px;
+      padding: 6px 10px;
       font-size: 11px;
-      cursor: pointer;
+      color: #ECEEF2;
     }
-    .actions button:hover { border-color: #61C3FF; color: #61C3FF; }
-    .actions button.export-btn {
-      background: #18FF74;
-      color: #131212;
-      border-color: #18FF74;
-      font-weight: 700;
-    }
-    .stage {
-      height: calc(100vh - 365px);
-      min-height: 220px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 24px;
-      padding: 18px 24px;
-      position: relative;
-    }
-    .canvas-frame {
-      position: relative;
-      border-radius: 10px;
-      overflow: hidden;
-      border: 1px solid rgba(246, 244, 242, 0.14);
-      box-shadow: 0 24px 60px rgba(0, 0, 0, 0.65);
-      background: #131212;
-      max-height: 100%;
-      aspect-ratio: 16 / 9;
-    }
-    canvas#scene {
-      display: block;
-      width: 100%;
-      height: 100%;
-    }
-    .dom-hud {
-      display: flex;
-      flex-direction: column;
-      gap: 12px;
-      width: 240px;
-    }
-    .hud-card {
-      background: #191818;
-      border: 1px solid rgba(246, 244, 242, 0.12);
-      border-radius: 8px;
-      padding: 12px 14px;
-      will-change: transform, opacity;
-    }
-    .hud-card .kicker {
+    .stage-tag .sub {
       font-size: 9px;
       text-transform: uppercase;
-      letter-spacing: 0.1em;
-      color: rgba(246, 244, 242, 0.55);
-      margin-bottom: 4px;
+      letter-spacing: 0.06em;
+      color: #9CA3AF;
+      margin-bottom: 2px;
     }
-    .hud-card .title {
-      font-size: 14px;
-      font-weight: 700;
-      color: #F6F4F2;
-    }
-    .pill-strip {
+    .stage-chips {
       display: flex;
-      gap: 6px;
-      margin-top: 8px;
+      gap: 4px;
+      margin-top: 4px;
     }
     .dot-chip {
-      width: 14px;
-      height: 14px;
-      border-radius: 4px;
-      background: #61C3FF;
-    }
-    #export-status {
-      font-size: 11px;
-      color: #3CFFEC;
+      width: 10px;
+      height: 10px;
+      border-radius: 2px;
+      background: #4A9EFF;
     }
   </style>
 </head>
 <body>
-  <div class="topbar">
-    <h1>
-      <span>Anime.js v4 Studio + Render</span>
-      <span class="badge">Virtual Clock + WebCodecs</span>
-    </h1>
-    <div class="actions">
-      <span id="export-status"></span>
-      <button id="btn-scene-orbital">Scene: Orbital Matrix</button>
-      <button id="btn-scene-burst">Scene: Spring Cascade</button>
-      <button id="btn-quick-webm" class="export-btn">Export 60fps WebM</button>
-    </div>
-  </div>
-
-  <div class="stage">
-    <div class="canvas-frame">
-      <canvas id="scene" width="960" height="540"></canvas>
-    </div>
-
-    <div class="dom-hud">
-      <div class="hud-card card-a">
-        <div class="kicker">Track 01 · Cubic Bezier</div>
-        <div class="title">Kinetic Matrix</div>
-        <div class="pill-strip">
+  <div id="stage-root" class="composition-stage">
+    <canvas id="scene" width="960" height="540"></canvas>
+    <div class="stage-hud-overlay">
+      <div class="stage-tag hud-badge-a">
+        <div class="sub">Cubic Bezier</div>
+        <div>Orbital Matrix</div>
+        <div class="stage-chips">
           <div class="dot-chip"></div>
           <div class="dot-chip"></div>
           <div class="dot-chip"></div>
@@ -157,13 +83,9 @@
           <div class="dot-chip"></div>
         </div>
       </div>
-      <div class="hud-card card-b">
-        <div class="kicker">Track 02 · Spring Physics</div>
-        <div class="title">Deterministic Step</div>
-      </div>
-      <div class="hud-card card-c">
-        <div class="kicker">Track 03 · Timeline Sync</div>
-        <div class="title" id="phase-readout">Phase: Intro</div>
+      <div class="stage-tag hud-badge-b">
+        <div class="sub">Timeline Marker</div>
+        <div id="phase-readout">Phase: Intro</div>
       </div>
     </div>
   </div>

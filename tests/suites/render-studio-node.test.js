@@ -101,14 +101,19 @@ suite('Render & Studio (Node)', () => {
 
     studio.store.updateGroupOffset(entry.id, entry.groups[1].uid, 200);
     expect(tl.duration).to.equal(600);
+    expect(studio.undo()).to.equal(true);
+    expect(tl.duration).to.equal(500);
+    expect(studio.redo()).to.equal(true);
+    expect(tl.duration).to.equal(600);
 
+    studio.store.updateTweenValues(entry.id, [entry.groups[0].uid], 'x', { from: 0, to: 150 });
     studio.store.updateEasing(entry.id, entry.groups[0].uid, null, {
       kind: 'bezier',
       bezier: [0.25, 0.8, 0.25, 1],
     }, true);
 
     studio.seek(200);
-    expect(obj.x).to.be.above(50);
+    expect(obj.x).to.be.above(75);
 
     const code = studio.exportCode();
     expect(code).to.include('cubicBezier(0.25, 0.8, 0.25, 1)');

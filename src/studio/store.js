@@ -28,9 +28,14 @@ import {
  */
 
 /**
+ * @typedef {'position'|'rotation'|'scale'|'animation'} PropertyCategory
+ */
+
+/**
  * @typedef {Object} StudioTweenTrack
  * @property {String} uid
  * @property {String} property
+ * @property {PropertyCategory} category
  * @property {String} targetLabel
  * @property {Target} target
  * @property {Number} targetIndex
@@ -38,10 +43,13 @@ import {
  * @property {Number} delay
  * @property {Number} duration
  * @property {Number} endTime
+ * @property {Number|null} fromNum
+ * @property {Number|null} toNum
  * @property {String} fromText
  * @property {String} toText
  * @property {String} unit
  * @property {Boolean} isColor
+ * @property {Boolean} isScalarEditable
  * @property {EasingDescriptor} easing
  * @property {Tween} tweenRef
  * @property {JSAnimation} animRef
@@ -50,6 +58,7 @@ import {
 /**
  * @typedef {Object} StudioGroupTrack
  * @property {String} uid
+ * @property {String} layerId
  * @property {String} label
  * @property {String} targetLabel
  * @property {Number} offset
@@ -65,6 +74,40 @@ import {
  */
 
 /**
+ * @typedef {Object} StudioPropertySummary
+ * @property {String} property
+ * @property {PropertyCategory} category
+ * @property {Number|null} fromNum
+ * @property {Number|null} toNum
+ * @property {String} fromText
+ * @property {String} toText
+ * @property {String} unit
+ * @property {Boolean} isColor
+ * @property {Boolean} isScalarEditable
+ * @property {Array<StudioTweenTrack>} tweens
+ */
+
+/**
+ * @typedef {Object} StudioLayerNode
+ * @property {String} id
+ * @property {String} name
+ * @property {String} targetLabel
+ * @property {'stagger-group'|'object'} kind
+ * @property {Array<String>} groupUids
+ * @property {String} primaryGroupUid
+ * @property {Array<Target>} targets
+ * @property {Number} offset
+ * @property {Number} delay
+ * @property {Number} duration
+ * @property {Number} endTime
+ * @property {EasingDescriptor} easing
+ * @property {Boolean} isStaggered
+ * @property {Boolean} hidden
+ * @property {Boolean} locked
+ * @property {Array<StudioPropertySummary>} properties
+ */
+
+/**
  * @typedef {Object} StudioEntry
  * @property {String} id
  * @property {'timeline'|'animation'|'set'} kind
@@ -72,16 +115,48 @@ import {
  * @property {Timeline|JSAnimation} instance
  * @property {Record<String, any>} rawParams
  * @property {Array<StudioGroupTrack>} groups
+ * @property {Array<StudioLayerNode>} layers
  * @property {Array<{ name: String, time: Number }>} labels
  * @property {Array<{ name: String, time: Number }>} calls
  * @property {Boolean} [_dirty]
  * @property {Array<StudioGroupTrack>} [_groups]
+ * @property {Array<StudioLayerNode>} [_layers]
  * @property {Array<{ name: String, time: Number }>} [_labels]
  * @property {Array<{ name: String, time: Number }>} [_calls]
  * @property {Number} createdAt
  */
 
+/**
+ * @typedef {Object} HistoryAction
+ * @property {String} label
+ * @property {() => void} undo
+ * @property {() => void} redo
+ */
+
+/**
+ * @typedef {Object} SceneConfigOption
+ * @property {String} id
+ * @property {String} label
+ */
+
 let studioEntrySeq = 0;
+
+const POSITION_PROPS = new Set(['x', 'y', 'z', 'translateX', 'translateY', 'translateZ', 'left', 'top', 'right', 'bottom']);
+const ROTATION_PROPS = new Set(['rot', 'rotate', 'rotateX', 'rotateY', 'rotateZ', 'orbitAngle', 'skew', 'skewX', 'skewY']);
+const SCALE_PROPS = new Set(['scale', 'scaleX', 'scaleY', 'scaleZ', 'pulse']);
+
+/**
+ * Classifies a tween property name into Transform (`position`/`rotation`/`scale`) or `animation`.
+ *
+ * @param  {String} prop
+ * @return {PropertyCategory}
+ */
+export const classifyProperty = prop => {
+  if (POSITION_PROPS.has(prop)) return 'position';
+  if (ROTATION_PROPS.has(prop)) return 'rotation';
+  if (SCALE_PROPS.has(prop)) return 'scale';
+  return 'animation';
+};
 
 /**
  * Formats a DOM/JS/Three target into a readable short label for timeline rows.
@@ -111,6 +186,20 @@ export const formatTargetLabel = (target, index = 0) => {
 };
 
 /**
+ * Cleans an animation `id` into a human-friendly layer name (e.g. `"Orbital Matrix-0"` -> `"Orbital Matrix"`).
+ *
+ * @param  {String|Number|undefined} id
+ * @param  {String} fallback
+ * @param  {Boolean} stripIndexSuffix
+ * @return {String}
+ */
+const formatLayerName = (id, fallback, stripIndexSuffix) => {
+  if (isUnd(id) || id === null || id === '') return fallback;
+  const s = String(id);
+  return stripIndexSuffix ? s.replace(/-\d+$/, '') : s;
+};
+
+/**
  * Formats a tween's start or end value cleanly for inspector display.
  *
  * @param  {Tween} tween
@@ -134,7 +223,7 @@ const formatTweenEndpoint = (tween, side) => {
 };
 
 /**
- * Central state store & `globals.editor` bridge for Anime Studio.
+ * Central state store, Undo/Redo history manager, Layer Visibility/Lock manager, & `globals.editor` bridge.
  * All studio metadata lives outside Anime.js instances to preserve V8 fast object maps.
  */
 export class StudioStore {
@@ -147,7 +236,7 @@ export class StudioStore {
     this._tlIdToEntry = new Map();
     /** @type {WeakMap<Tween, EasingDescriptor>} */
     this._tweenEasingOverrides = new WeakMap();
-    /** @type {WeakMap<JSAnimation, { rawEase?: any, targetSelector?: any, staggerKey?: String }>} */
+    /** @type {WeakMap<JSAnimation, { rawEase?: any, targetSelector?: any, staggerKey?: String, rawParams?: any }>} */
     this._animHints = new WeakMap();
     /** @type {Map<String, Array<{ rawParams: any, targetSelector: any, position: any, staggerKey: String }>>} */
     this._pendingTlChildHints = new Map();
@@ -157,12 +246,49 @@ export class StudioStore {
     this._listeners = new Set();
     /** @type {Boolean} */
     this._suspended = false;
+
     /** @type {String|null} */
     this.selectedEntryId = null;
+    /** @type {String|null} */
+    this.selectedLayerId = null;
     /** @type {String|null} */
     this.selectedGroupUid = null;
     /** @type {String|null} */
     this.selectedTweenUid = null;
+    /** @type {String|null} */
+    this.selectedProperty = null;
+
+    // Layer visibility & lock registries (outside core instances)
+    /** @type {Set<String>} */
+    this._hiddenLayers = new Set();
+    /** @type {Set<String>} */
+    this._lockedLayers = new Set();
+    /** @type {WeakSet<Object>} */
+    this._hiddenTargets = new WeakSet();
+    /** @type {WeakMap<Object, String>} */
+    this._prevDomVisibility = new WeakMap();
+
+    // Project state & Undo / Redo history
+    this.projectName = 'Untitled Motion';
+    this.editCount = 0;
+    this.savedEditCount = 0;
+    this.lastSavedAt = null;
+    /** @type {Array<HistoryAction>} */
+    this._undoStack = [];
+    /** @type {Array<HistoryAction>} */
+    this._redoStack = [];
+    /** @type {{ label: String, actions: Array<HistoryAction> }|null} */
+    this._activeBatch = null;
+
+    // Host scene actions (optional; wired by workbenches/apps)
+    /** @type {Array<SceneConfigOption>} */
+    this.scenes = [];
+    /** @type {String|null} */
+    this.activeSceneId = null;
+    /** @type {((sceneId: String) => void)|null} */
+    this._onSelectScene = null;
+    /** @type {(() => void)|null} */
+    this._onAddObject = null;
 
     this._prevEditor = null;
 
@@ -210,6 +336,21 @@ export class StudioStore {
     };
 
     this._notifyQueued = false;
+  }
+
+  /** @return {Boolean} */
+  get canUndo() {
+    return this._undoStack.length > 0;
+  }
+
+  /** @return {Boolean} */
+  get canRedo() {
+    return this._redoStack.length > 0;
+  }
+
+  /** @return {Boolean} */
+  get isDirty() {
+    return this.editCount !== this.savedEditCount;
   }
 
   /** Connects `globals.editor` to capture all subsequent `animate()`, `utils.set()`, and `createTimeline()` calls. */
@@ -271,6 +412,141 @@ export class StudioStore {
     });
   }
 
+  // =========================================================
+  // History (Undo / Redo) & Project Status
+  // =========================================================
+
+  /**
+   * Begins grouping continuous edits (e.g. pointer drag or range scrub) into one Undo entry.
+   *
+   * @param  {String} label
+   * @return {void}
+   */
+  beginBatch(label) {
+    if (this._activeBatch) return;
+    this._activeBatch = { label, actions: [] };
+  }
+
+  /** Commits the current batch onto the Undo stack as one composite action. */
+  commitBatch() {
+    const batch = this._activeBatch;
+    this._activeBatch = null;
+    if (!batch || !batch.actions.length) return;
+    const actions = batch.actions;
+    this._pushHistory({
+      label: batch.label,
+      undo: () => {
+        for (let i = actions.length - 1; i >= 0; i--) actions[i].undo();
+      },
+      redo: () => {
+        for (let i = 0; i < actions.length; i++) actions[i].redo();
+      },
+    });
+  }
+
+  /**
+   * @param  {HistoryAction} action
+   * @return {void}
+   */
+  _pushHistory(action) {
+    if (this._activeBatch) {
+      this._activeBatch.actions.push(action);
+      return;
+    }
+    this._undoStack.push(action);
+    if (this._undoStack.length > 100) this._undoStack.shift();
+    this._redoStack = [];
+    this.editCount++;
+  }
+
+  /** @return {Boolean} */
+  undo() {
+    if (!this._undoStack.length) return false;
+    const action = this._undoStack.pop();
+    action.undo();
+    this._redoStack.push(action);
+    this.editCount = Math.max(0, this.editCount - 1);
+    this.emit();
+    return true;
+  }
+
+  /** @return {Boolean} */
+  redo() {
+    if (!this._redoStack.length) return false;
+    const action = this._redoStack.pop();
+    action.redo();
+    this._undoStack.push(action);
+    this.editCount++;
+    this.emit();
+    return true;
+  }
+
+  /** Marks current state as saved and optionally persists a snapshot to `localStorage`. */
+  markSaved(jsonSnapshot = null) {
+    this.savedEditCount = this.editCount;
+    this.lastSavedAt = Date.now();
+    if (jsonSnapshot && typeof localStorage !== 'undefined') {
+      try {
+        localStorage.setItem(`anime-studio:${this.projectName}`, JSON.stringify(jsonSnapshot));
+      } catch {
+        // Ignore storage quota errors
+      }
+    }
+    this.emit();
+  }
+
+  /** @param {String} name */
+  setProjectName(name) {
+    const next = (name || '').trim() || 'Untitled Motion';
+    if (next === this.projectName) return;
+    this.projectName = next;
+    this.editCount++;
+    this.emit();
+  }
+
+  // =========================================================
+  // Scene Integration Hooks
+  // =========================================================
+
+  /**
+   * Registers host scenes and optional Add-Object callback so the header/sidebar control them natively.
+   *
+   * @param {{ scenes?: Array<SceneConfigOption>, activeSceneId?: String, onSelectScene?: (id: String) => void, onAddObject?: () => void }} config
+   */
+  setSceneSupport(config = {}) {
+    this.scenes = config.scenes || [];
+    this.activeSceneId = config.activeSceneId || (this.scenes[0] ? this.scenes[0].id : null);
+    this._onSelectScene = config.onSelectScene || null;
+    this._onAddObject = config.onAddObject || null;
+    this.emit();
+  }
+
+  /** @param {String} sceneId */
+  selectScene(sceneId) {
+    this.activeSceneId = sceneId;
+    if (this._onSelectScene) {
+      this._onSelectScene(sceneId);
+    }
+    this.emit();
+  }
+
+  /** @return {Boolean} */
+  get supportsAddObject() {
+    return isFnc(this._onAddObject);
+  }
+
+  /** Triggers registered scene Add-Object action if available. */
+  addObject() {
+    if (!this._onAddObject) return;
+    this._onAddObject();
+    this.editCount++;
+    this.emit();
+  }
+
+  // =========================================================
+  // EditorGlobals Capture Handlers
+  // =========================================================
+
   /**
    * @param  {TargetsParam} targets
    * @param  {AnimationParams} parameters
@@ -280,6 +556,7 @@ export class StudioStore {
     const anim = this._withSuspended(() => new JSAnimation(targets, parameters, null, 0, false).init());
     this._animHints.set(anim, {
       rawEase: parameters ? parameters.ease : undefined,
+      rawParams: parameters,
       targetSelector: isStr(targets) ? targets : null,
     });
     this.attach(anim, parameters && parameters.id !== undefined ? String(parameters.id) : undefined, 'animation', parameters);
@@ -296,6 +573,7 @@ export class StudioStore {
     if (anim) {
       this._animHints.set(anim, {
         rawEase: parameters ? parameters.ease : undefined,
+        rawParams: parameters,
         targetSelector: isStr(targets) ? targets : null,
       });
       this.attach(anim, parameters && parameters.id !== undefined ? String(parameters.id) : undefined, 'set', parameters);
@@ -334,6 +612,7 @@ export class StudioStore {
     const staggerKey = count > 1 ? `stagger-${Date.now()}-${Math.random().toString(36).slice(2, 6)}` : null;
     const hint = {
       rawParams: childParams,
+      rawEase: childParams ? childParams.ease : undefined,
       targetSelector: isStr(targets) ? targets : null,
       position,
       staggerKey,
@@ -373,7 +652,7 @@ export class StudioStore {
     );
 
     const store = this;
-    /** @type {StudioEntry & { _dirty?: Boolean, _groups?: Array<StudioGroupTrack>, _labels?: Array<{ name: String, time: Number }>, _calls?: Array<{ name: String, time: Number }> }} */
+    /** @type {StudioEntry} */
     const entry = {
       id,
       kind,
@@ -382,6 +661,7 @@ export class StudioStore {
       rawParams: rawParams || {},
       _dirty: false,
       _groups: [],
+      _layers: [],
       _labels: [],
       _calls: [],
       get groups() {
@@ -390,6 +670,13 @@ export class StudioStore {
       },
       set groups(v) {
         this._groups = v;
+      },
+      get layers() {
+        if (this._dirty) store.refreshEntry(this);
+        return this._layers;
+      },
+      set layers(v) {
+        this._layers = v;
       },
       get labels() {
         if (this._dirty) store.refreshEntry(this);
@@ -434,19 +721,21 @@ export class StudioStore {
     if (this.selectedEntryId === entryId) {
       const first = this.entries.keys().next();
       this.selectedEntryId = first.done ? null : first.value;
+      this.selectedLayerId = null;
       this.selectedGroupUid = null;
       this.selectedTweenUid = null;
+      this.selectedProperty = null;
     }
     this.emit();
   }
 
-  /** Refreshes track snapshots across all registered entries. */
+  /** Refreshes track & layer snapshots across all registered entries. */
   refreshAll() {
     this.entries.forEach(entry => this.refreshEntry(entry));
   }
 
   /**
-   * Extracts up-to-date live tracks, labels, and tween timings from an attached `Timeline` or `JSAnimation`.
+   * Extracts up-to-date live tracks, hierarchical layer groups, labels, and tween timings.
    *
    * @param  {StudioEntry} entry
    * @return {StudioEntry}
@@ -473,7 +762,6 @@ export class StudioStore {
       forEachChildren(tl, (/** @type {Tickable} */child) => {
         const isAnimChild = !isUnd(/** @type {JSAnimation} */(child).targets);
         if (!isAnimChild) {
-          // Timer / .call() marker inside timeline
           const callHint = callHints[callIdx++] || null;
           calls.push({
             name: callHint ? callHint.name : `timer#${child.id}`,
@@ -491,15 +779,124 @@ export class StudioStore {
       });
     } else {
       const anim = /** @type {JSAnimation} */(inst);
-      const hint = this._animHints.get(anim) || { rawEase: entry.rawParams ? entry.rawParams.ease : undefined };
+      const hint = this._animHints.get(anim) || { rawEase: entry.rawParams ? entry.rawParams.ease : undefined, rawParams: entry.rawParams };
       groups.push(this._buildGroupTrack(entry.id, anim, 0, hint));
     }
 
+    const layers = this._buildLayers(entry.id, groups);
+
     entry._dirty = false;
     entry._groups = groups;
+    entry._layers = layers;
     entry._labels = labels;
     entry._calls = calls;
     return entry;
+  }
+
+  /**
+   * Builds meaningful hierarchical `StudioLayerNode`s by coalescing `staggerKey` sibling groups.
+   *
+   * @param  {String} entryId
+   * @param  {Array<StudioGroupTrack>} groups
+   * @return {Array<StudioLayerNode>}
+   */
+  _buildLayers(entryId, groups) {
+    /** @type {Array<StudioLayerNode>} */
+    const layers = [];
+    /** @type {Map<String, Array<StudioGroupTrack>>} */
+    const bucketMap = new Map();
+    /** @type {Array<String>} */
+    const bucketOrder = [];
+
+    for (let i = 0; i < groups.length; i++) {
+      const g = groups[i];
+      const bucketKey = g.staggerKey ? `stagger:${g.staggerKey}` : `single:${g.uid}`;
+      if (!bucketMap.has(bucketKey)) {
+        bucketMap.set(bucketKey, []);
+        bucketOrder.push(bucketKey);
+      }
+      bucketMap.get(bucketKey).push(g);
+    }
+
+    for (let b = 0; b < bucketOrder.length; b++) {
+      const key = bucketOrder[b];
+      const members = bucketMap.get(key);
+      const first = members[0];
+      const isStaggerGroup = members.length > 1 || first.targets.length > 1;
+      const layerId = `${entryId}:layer:${b}`;
+
+      let minOffset = Infinity;
+      let maxEnd = 0;
+      let minDelay = Infinity;
+      /** @type {Array<Target>} */
+      const targets = [];
+      const seenTargets = new Set();
+      /** @type {Map<String, StudioPropertySummary>} */
+      const propMap = new Map();
+
+      for (let m = 0; m < members.length; m++) {
+        const g = members[m];
+        g.layerId = layerId;
+        if (g.offset < minOffset) minOffset = g.offset;
+        if (g.delay < minDelay) minDelay = g.delay;
+        if (g.endTime > maxEnd) maxEnd = g.endTime;
+
+        for (let t = 0; t < g.targets.length; t++) {
+          const tgt = g.targets[t];
+          if (!seenTargets.has(tgt)) {
+            seenTargets.add(tgt);
+            targets.push(tgt);
+          }
+        }
+
+        for (let twIdx = 0; twIdx < g.tweens.length; twIdx++) {
+          const tw = g.tweens[twIdx];
+          if (!propMap.has(tw.property)) {
+            propMap.set(tw.property, {
+              property: tw.property,
+              category: tw.category,
+              fromNum: tw.fromNum,
+              toNum: tw.toNum,
+              fromText: tw.fromText,
+              toText: tw.toText,
+              unit: tw.unit,
+              isColor: tw.isColor,
+              isScalarEditable: tw.isScalarEditable,
+              tweens: [],
+            });
+          }
+          propMap.get(tw.property).tweens.push(tw);
+        }
+      }
+
+      if (minOffset === Infinity) minOffset = 0;
+      if (minDelay === Infinity) minDelay = 0;
+
+      const rawId = first.animRef.id;
+      const cleanName = formatLayerName(rawId, first.targetLabel, members.length > 1);
+      const displayName = cleanName.startsWith('#') || cleanName.startsWith('.') ? cleanName : cleanName;
+
+      layers.push({
+        id: layerId,
+        name: displayName,
+        targetLabel: first.targetLabel,
+        kind: isStaggerGroup ? 'stagger-group' : 'object',
+        groupUids: members.map(g => g.uid),
+        primaryGroupUid: first.uid,
+        targets,
+        offset: minOffset,
+        delay: minDelay,
+        duration: Math.max(0, maxEnd - minOffset - minDelay),
+        endTime: maxEnd,
+        easing: first.easing,
+        isStaggered: isStaggerGroup,
+        hidden: this._hiddenLayers.has(layerId),
+        locked: this._lockedLayers.has(layerId),
+        properties: Array.from(propMap.values()),
+      });
+    }
+
+    return layers;
   }
 
   /**
@@ -513,7 +910,7 @@ export class StudioStore {
     const targets = anim.targets || [];
     const targetLabel = (hint && hint.targetSelector)
       ? hint.targetSelector
-      : (targets.length > 1 ? `${formatTargetLabel(targets[0])} (+${targets.length - 1})` : formatTargetLabel(targets[0]));
+      : (targets.length > 1 ? `${formatTargetLabel(targets[0])} (${targets.length})` : formatTargetLabel(targets[0]));
 
     /** @type {Array<StudioTweenTrack>} */
     const tweens = [];
@@ -535,10 +932,12 @@ export class StudioStore {
       const startOffset = (anim._offset || 0) + (anim._delay || 0) + ((tw._startTime || 0) - (tw._delay || 0));
       const delay = tw._delay || 0;
       const duration = tw._updateDuration <= minValue ? 0 : tw._updateDuration;
+      const isScalarEditable = tw._valueType === valueTypes.NUMBER || tw._valueType === valueTypes.UNIT;
 
       tweens.push({
         uid: `${entryId}:g${groupIdx}:t${tIdx++}`,
         property: tw.property,
+        category: classifyProperty(tw.property),
         targetLabel: formatTargetLabel(tw.target, tIndex),
         target: tw.target,
         targetIndex: tIndex,
@@ -546,10 +945,13 @@ export class StudioStore {
         delay,
         duration,
         endTime: startOffset + delay + duration,
+        fromNum: isScalarEditable ? round(tw._fromNumber, 3) : null,
+        toNum: isScalarEditable ? round(tw._toNumber, 3) : null,
         fromText: formatTweenEndpoint(tw, 'from'),
         toText: formatTweenEndpoint(tw, 'to'),
         unit: tw._unit || '',
         isColor: tw._valueType === valueTypes.COLOR,
+        isScalarEditable,
         easing,
         tweenRef: tw,
         animRef: anim,
@@ -562,7 +964,8 @@ export class StudioStore {
 
     return {
       uid: `${entryId}:g${groupIdx}`,
-      label: anim.id !== undefined ? `${targetLabel}` : `Track #${groupIdx + 1}`,
+      layerId: '',
+      label: anim.id !== undefined ? String(anim.id) : `${targetLabel}`,
       targetLabel,
       offset,
       delay,
@@ -587,15 +990,22 @@ export class StudioStore {
   }
 
   /**
-   * Finds the currently selected group and/or tween inside the active entry.
+   * Resolves the currently selected entry, layer, group, and tween.
+   * Note: Selection is intentionally allowed to be `null` when explicitly cleared (`selectedLayerId === '__none__'`).
    *
-   * @return {{ entry: StudioEntry|null, group: StudioGroupTrack|null, tween: StudioTweenTrack|null }}
+   * @return {{ entry: StudioEntry|null, layer: StudioLayerNode|null, group: StudioGroupTrack|null, tween: StudioTweenTrack|null }}
    */
   getSelection() {
     const entry = this.getSelectedEntry();
-    if (!entry) return { entry: null, group: null, tween: null };
-    let group = entry.groups.find(g => g.uid === this.selectedGroupUid) || entry.groups[0] || null;
+    if (!entry) return { entry: null, layer: null, group: null, tween: null };
+
+    if (this.selectedLayerId === '__none__') {
+      return { entry, layer: null, group: null, tween: null };
+    }
+
+    let group = this.selectedGroupUid ? entry.groups.find(g => g.uid === this.selectedGroupUid) || null : null;
     let tween = null;
+
     if (this.selectedTweenUid) {
       for (const g of entry.groups) {
         const hit = g.tweens.find(t => t.uid === this.selectedTweenUid);
@@ -606,11 +1016,146 @@ export class StudioStore {
         }
       }
     }
-    if (!tween && group && group.tweens.length) {
-      tween = group.tweens[0];
+
+    let layer = this.selectedLayerId ? entry.layers.find(l => l.id === this.selectedLayerId) || null : null;
+    if (!layer && group) {
+      layer = entry.layers.find(l => l.id === group.layerId) || null;
     }
-    return { entry, group, tween };
+    if (!layer && !this.selectedLayerId && entry.layers.length) {
+      layer = entry.layers[0];
+    }
+    if (!group && layer) {
+      group = entry.groups.find(g => g.uid === layer.primaryGroupUid) || entry.groups[0] || null;
+    }
+    if (!tween && group && group.tweens.length) {
+      if (this.selectedProperty) {
+        tween = group.tweens.find(t => t.property === this.selectedProperty) || group.tweens[0];
+      } else {
+        tween = group.tweens[0];
+      }
+    }
+
+    return { entry, layer, group, tween };
   }
+
+  // =========================================================
+  // Layer Visibility & Lock Controls
+  // =========================================================
+
+  /**
+   * Returns `true` if `target` is currently visible (not hidden by a layer toggle).
+   *
+   * @param  {any} target
+   * @return {Boolean}
+   */
+  isTargetVisible(target) {
+    if (!target) return true;
+    return !this._hiddenTargets.has(target);
+  }
+
+  /**
+   * @param  {StudioLayerNode} layer
+   * @param  {Boolean} hidden
+   * @return {void}
+   */
+  _applyLayerHidden(layer, hidden) {
+    if (hidden) this._hiddenLayers.add(layer.id);
+    else this._hiddenLayers.delete(layer.id);
+
+    for (let i = 0; i < layer.targets.length; i++) {
+      const t = /** @type {any} */(layer.targets[i]);
+      if (!t) continue;
+      if (hidden) this._hiddenTargets.add(t);
+      else this._hiddenTargets.delete(t);
+
+      if (t[isDomSymbol] || t[isSvgSymbol] || (typeof Element !== 'undefined' && t instanceof Element)) {
+        const el = /** @type {HTMLElement} */(t);
+        if (hidden) {
+          if (!this._prevDomVisibility.has(el)) {
+            this._prevDomVisibility.set(el, el.style.visibility || '');
+          }
+          el.style.visibility = 'hidden';
+        } else {
+          const prev = this._prevDomVisibility.get(el) || '';
+          el.style.visibility = prev;
+        }
+      } else if (typeof t === 'object' && 'visible' in t) {
+        t.visible = !hidden;
+      }
+    }
+  }
+
+  /**
+   * Toggles visibility of a layer (hiding/showing both DOM elements and JS/Canvas targets) with Undo support.
+   *
+   * @param  {String} entryId
+   * @param  {String} layerId
+   * @return {void}
+   */
+  toggleLayerVisibility(entryId, layerId) {
+    const entry = this.entries.get(entryId);
+    if (!entry) return;
+    const layer = entry.layers.find(l => l.id === layerId);
+    if (!layer) return;
+    const nextHidden = !this._hiddenLayers.has(layerId);
+
+    const apply = hide => {
+      this._applyLayerHidden(layer, hide);
+      this.refreshEntry(entry);
+      this._reseekPreservingState(entry.instance);
+      this.emit();
+    };
+
+    apply(nextHidden);
+    this._pushHistory({
+      label: `${nextHidden ? 'Hide' : 'Show'} ${layer.name}`,
+      undo: () => apply(!nextHidden),
+      redo: () => apply(nextHidden),
+    });
+  }
+
+  /**
+   * Toggles edit-lock state on a layer with Undo support.
+   *
+   * @param  {String} entryId
+   * @param  {String} layerId
+   * @return {void}
+   */
+  toggleLayerLock(entryId, layerId) {
+    const entry = this.entries.get(entryId);
+    if (!entry) return;
+    const layer = entry.layers.find(l => l.id === layerId);
+    if (!layer) return;
+    const nextLocked = !this._lockedLayers.has(layerId);
+
+    const apply = lock => {
+      if (lock) this._lockedLayers.add(layerId);
+      else this._lockedLayers.delete(layerId);
+      this.refreshEntry(entry);
+      this.emit();
+    };
+
+    apply(nextLocked);
+    this._pushHistory({
+      label: `${nextLocked ? 'Lock' : 'Unlock'} ${layer.name}`,
+      undo: () => apply(!nextLocked),
+      redo: () => apply(nextLocked),
+    });
+  }
+
+  /**
+   * Checks whether `group` belongs to a locked layer.
+   *
+   * @param  {StudioGroupTrack} group
+   * @return {Boolean}
+   */
+  isGroupLocked(group) {
+    return !!(group && group.layerId && this._lockedLayers.has(group.layerId));
+  }
+
+  // =========================================================
+  // Live Mutations (Offset, Duration, Easing, Tween Values)
+  // =========================================================
 
   /**
    * Live-updates a group's offset (`_offset` in Timeline or `_delay` for standalone animations) and re-seeks.
@@ -624,17 +1169,58 @@ export class StudioStore {
     const entry = this.entries.get(entryId);
     if (!entry) return;
     const group = entry.groups.find(g => g.uid === groupUid);
-    if (!group) return;
+    if (!group || this.isGroupLocked(group)) return;
     const safeOffset = Math.max(0, round(newOffsetMs, 2));
-    if (entry.kind === 'timeline') {
-      group.animRef._offset = safeOffset;
-      recomputeTimelineTimings(/** @type {Timeline} */(entry.instance));
-    } else {
-      group.animRef._delay = safeOffset;
+    const prevOffset = entry.kind === 'timeline' ? group.animRef._offset : group.animRef._delay;
+    if (safeOffset === prevOffset) return;
+
+    const apply = val => {
+      if (entry.kind === 'timeline') {
+        group.animRef._offset = val;
+        recomputeTimelineTimings(/** @type {Timeline} */(entry.instance));
+      } else {
+        group.animRef._delay = val;
+      }
+      this._reseekPreservingState(entry.instance);
+      this.refreshEntry(entry);
+      this.emit();
+    };
+
+    this._pushHistory({
+      label: `Move ${group.targetLabel} to ${Math.round(safeOffset)}ms`,
+      undo: () => apply(prevOffset),
+      redo: () => apply(safeOffset),
+    });
+    apply(safeOffset);
+  }
+
+  /**
+   * Shifts all child groups of a layer by `deltaMs`.
+   *
+   * @param  {String} entryId
+   * @param  {String} layerId
+   * @param  {Number} deltaMs
+   * @return {void}
+   */
+  shiftLayerOffset(entryId, layerId, deltaMs) {
+    const entry = this.entries.get(entryId);
+    if (!entry) return;
+    const layer = entry.layers.find(l => l.id === layerId);
+    if (!layer || this._lockedLayers.has(layerId)) return;
+
+    const members = entry.groups.filter(g => layer.groupUids.includes(g.uid));
+    if (!members.length) return;
+    const minOff = members.reduce((m, g) => Math.min(m, entry.kind === 'timeline' ? g.animRef._offset : g.animRef._delay), Infinity);
+    const clampedDelta = Math.max(-minOff, round(deltaMs, 2));
+    if (!clampedDelta) return;
+
+    this.beginBatch(`Shift ${layer.name}`);
+    for (let i = 0; i < members.length; i++) {
+      const g = members[i];
+      const cur = entry.kind === 'timeline' ? g.animRef._offset : g.animRef._delay;
+      this.updateGroupOffset(entryId, g.uid, cur + clampedDelta);
     }
-    this._reseekPreservingState(entry.instance);
-    this.refreshEntry(entry);
-    this.emit();
+    this.commitBatch();
   }
 
   /**
@@ -649,57 +1235,176 @@ export class StudioStore {
     const entry = this.entries.get(entryId);
     if (!entry) return;
     const group = entry.groups.find(g => g.uid === groupUid);
-    if (!group) return;
+    if (!group || this.isGroupLocked(group)) return;
     const safeDur = Math.max(10, round(newDurationMs, 2));
-    group.animRef.stretch(safeDur);
-    if (entry.kind === 'timeline') {
-      recomputeTimelineTimings(/** @type {Timeline} */(entry.instance));
-    }
-    this._reseekPreservingState(entry.instance);
-    this.refreshEntry(entry);
-    this.emit();
+    const prevDur = group.animRef.duration;
+    if (safeDur === prevDur) return;
+
+    const apply = val => {
+      group.animRef.stretch(val);
+      if (entry.kind === 'timeline') {
+        recomputeTimelineTimings(/** @type {Timeline} */(entry.instance));
+      }
+      this._reseekPreservingState(entry.instance);
+      this.refreshEntry(entry);
+      this.emit();
+    };
+
+    this._pushHistory({
+      label: `Resize ${group.targetLabel} to ${Math.round(safeDur)}ms`,
+      undo: () => apply(prevDur),
+      redo: () => apply(safeDur),
+    });
+    apply(safeDur);
   }
 
   /**
-   * Live-applies a new easing or spring curve to the selected tween (or all tweens in a group).
+   * Live-applies a new easing or spring curve to matching tweens (or all tweens in a group/layer).
    *
    * @param  {String} entryId
    * @param  {String} groupUid
    * @param  {String|null} tweenUid
    * @param  {{ kind: 'ease'|'bezier'|'spring', value?: String, bezier?: [Number, Number, Number, Number], spring?: any }} spec
    * @param  {Boolean} [applyToGroup=true]
+   * @param  {Array<String>|null} [overrideGroupUids=null]
    * @return {void}
    */
-  updateEasing(entryId, groupUid, tweenUid, spec, applyToGroup = true) {
+  updateEasing(entryId, groupUid, tweenUid, spec, applyToGroup = true, overrideGroupUids = null) {
     const entry = this.entries.get(entryId);
     if (!entry) return;
     const group = entry.groups.find(g => g.uid === groupUid);
-    if (!group) return;
+    if (!group || this.isGroupLocked(group)) return;
 
     const built = buildStudioEasing(spec);
-    const targetTweens = applyToGroup
-      ? group.tweens
-      : group.tweens.filter(t => t.uid === tweenUid);
+    const targetGroups = overrideGroupUids
+      ? entry.groups.filter(g => overrideGroupUids.includes(g.uid))
+      : [group];
 
-    for (let i = 0; i < targetTweens.length; i++) {
-      const twTrack = targetTweens[i];
-      const tw = twTrack.tweenRef;
-      tw._ease = built.fn;
-      this._tweenEasingOverrides.set(tw, built.descriptor);
-      if (built.springInstance) {
-        built.springInstance.parent = group.animRef;
-        tw._updateDuration = built.springInstance.settlingDuration;
-        tw._changeDuration = built.springInstance.settlingDuration;
+    /** @type {Array<{ tw: Tween, anim: JSAnimation, prevEase: any, prevDesc: EasingDescriptor|undefined, prevUpdateDur: Number, prevChangeDur: Number }>} */
+    const snapshots = [];
+
+    for (let gi = 0; gi < targetGroups.length; gi++) {
+      const g = targetGroups[gi];
+      const targetTweens = applyToGroup
+        ? g.tweens
+        : g.tweens.filter(t => t.uid === tweenUid);
+      for (let i = 0; i < targetTweens.length; i++) {
+        const twTrack = targetTweens[i];
+        const tw = twTrack.tweenRef;
+        snapshots.push({
+          tw,
+          anim: g.animRef,
+          prevEase: tw._ease,
+          prevDesc: this._tweenEasingOverrides.get(tw),
+          prevUpdateDur: tw._updateDuration,
+          prevChangeDur: tw._changeDuration,
+        });
       }
     }
 
-    if (built.springInstance) {
-      recomputeAnimationTimings(group.animRef);
-    }
+    if (!snapshots.length) return;
 
-    this._reseekPreservingState(entry.instance);
-    this.refreshEntry(entry);
-    this.emit();
+    const applyNew = () => {
+      const touchedAnims = new Set();
+      for (let i = 0; i < snapshots.length; i++) {
+        const snap = snapshots[i];
+        snap.tw._ease = built.fn;
+        this._tweenEasingOverrides.set(snap.tw, built.descriptor);
+        if (built.springInstance) {
+          built.springInstance.parent = snap.anim;
+          snap.tw._updateDuration = built.springInstance.settlingDuration;
+          snap.tw._changeDuration = built.springInstance.settlingDuration;
+          touchedAnims.add(snap.anim);
+        }
+      }
+      touchedAnims.forEach(anim => recomputeAnimationTimings(anim));
+      this._reseekPreservingState(entry.instance);
+      this.refreshEntry(entry);
+      this.emit();
+    };
+
+    const revertOld = () => {
+      const touchedAnims = new Set();
+      for (let i = 0; i < snapshots.length; i++) {
+        const snap = snapshots[i];
+        snap.tw._ease = snap.prevEase;
+        if (snap.prevDesc) this._tweenEasingOverrides.set(snap.tw, snap.prevDesc);
+        else this._tweenEasingOverrides.delete(snap.tw);
+        snap.tw._updateDuration = snap.prevUpdateDur;
+        snap.tw._changeDuration = snap.prevChangeDur;
+        touchedAnims.add(snap.anim);
+      }
+      touchedAnims.forEach(anim => recomputeAnimationTimings(anim));
+      this._reseekPreservingState(entry.instance);
+      this.refreshEntry(entry);
+      this.emit();
+    };
+
+    this._pushHistory({
+      label: `Ease -> ${built.label}`,
+      undo: revertOld,
+      redo: applyNew,
+    });
+    applyNew();
+  }
+
+  /**
+   * Live-updates scalar `from` / `to` values across matching property tweens in `groupUids`.
+   *
+   * @param  {String} entryId
+   * @param  {Array<String>} groupUids
+   * @param  {String} propertyName
+   * @param  {{ from?: Number, to?: Number }} patch
+   * @return {void}
+   */
+  updateTweenValues(entryId, groupUids, propertyName, patch) {
+    const entry = this.entries.get(entryId);
+    if (!entry) return;
+    const targetGroups = entry.groups.filter(g => groupUids.includes(g.uid));
+    if (!targetGroups.length || targetGroups.some(g => this.isGroupLocked(g))) return;
+
+    /** @type {Array<{ tw: Tween, prevFrom: Number, prevTo: Number, prevVal: any }>} */
+    const snapshots = [];
+    for (let i = 0; i < targetGroups.length; i++) {
+      const g = targetGroups[i];
+      for (let j = 0; j < g.tweens.length; j++) {
+        const twTrack = g.tweens[j];
+        if (twTrack.property === propertyName && twTrack.isScalarEditable) {
+          snapshots.push({
+            tw: twTrack.tweenRef,
+            prevFrom: twTrack.tweenRef._fromNumber,
+            prevTo: twTrack.tweenRef._toNumber,
+            prevVal: twTrack.tweenRef._value,
+          });
+        }
+      }
+    }
+    if (!snapshots.length) return;
+
+    const applyPatch = (useNew) => {
+      for (let i = 0; i < snapshots.length; i++) {
+        const snap = snapshots[i];
+        const nextFrom = useNew && patch.from !== undefined && Number.isFinite(patch.from) ? patch.from : snap.prevFrom;
+        const nextTo = useNew && patch.to !== undefined && Number.isFinite(patch.to) ? patch.to : snap.prevTo;
+        snap.tw._fromNumber = nextFrom;
+        snap.tw._toNumber = nextTo;
+        if (snap.tw._valueType === valueTypes.UNIT) {
+          snap.tw._value = `${nextTo}${snap.tw._unit}`;
+        } else {
+          snap.tw._value = nextTo;
+        }
+      }
+      this._reseekPreservingState(entry.instance);
+      this.refreshEntry(entry);
+      this.emit();
+    };
+
+    this._pushHistory({
+      label: `Edit ${propertyName}`,
+      undo: () => applyPatch(false),
+      redo: () => applyPatch(true),
+    });
+    applyPatch(true);
   }
 
   /**
@@ -710,7 +1415,7 @@ export class StudioStore {
    */
   _reseekPreservingState(instance) {
     const wasPaused = instance.paused;
-    const t = instance.currentTime;
+    const t = instance.iterationCount === Infinity ? instance.iterationCurrentTime : instance.currentTime;
     instance.seek(t, 1);
     if (!wasPaused) instance.resume();
   }

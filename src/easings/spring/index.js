@@ -46,6 +46,17 @@ import {
 
 const maxSpringParamValue = K * 10;
 
+/** @type {WeakMap<EasingFunction, Spring>} */
+const springByEase = new WeakMap();
+
+/**
+ * Returns the `Spring` instance that owns `easeFn`, if any.
+ *
+ * @param  {EasingFunction|any} easeFn
+ * @return {Spring|null}
+ */
+export const getSpringFromEase = easeFn => easeFn ? (springByEase.get(easeFn) || null) : null;
+
 export class Spring {
   /**
    * @param {SpringParams} [parameters]
@@ -91,6 +102,7 @@ export class Spring {
       }
       return t === 0 || t === 1 ? t : this.solve(t * this.solverDuration);
     }
+    springByEase.set(this.ease, this);
   }
 
   /** @type {EasingFunction} */

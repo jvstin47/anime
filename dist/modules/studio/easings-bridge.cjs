@@ -95,20 +95,23 @@ const parseCubicBezierString = str => {
  * @return {EasingDescriptor}
  */
 const describeEasing = (rawEase, compiledEase) => {
-  if (rawEase && !helpers.isUnd(rawEase.ease) && (rawEase instanceof index.Spring || !helpers.isUnd(rawEase.settlingDuration))) {
-    const sp = /** @type {Spring} */(rawEase);
+  const springRef = (rawEase && !helpers.isUnd(rawEase.ease) && (rawEase instanceof index.Spring || !helpers.isUnd(rawEase.settlingDuration)))
+    ? /** @type {Spring} */(rawEase)
+    : index.getSpringFromEase(compiledEase);
+
+  if (springRef) {
     return {
       kind: 'spring',
-      label: `createSpring({ bounce: ${helpers.round(sp.bn, 2)}, duration: ${helpers.round(sp.pd, 0)} })`,
-      fn: sp.ease,
+      label: `createSpring({ bounce: ${helpers.round(springRef.bn, 2)}, duration: ${helpers.round(springRef.pd, 0)} })`,
+      fn: springRef.ease,
       spring: {
-        bounce: sp.bn,
-        duration: sp.pd,
-        mass: sp.m,
-        stiffness: sp.s,
-        damping: sp.d,
-        velocity: sp.v,
-        settlingDuration: sp.settlingDuration,
+        bounce: springRef.bn,
+        duration: springRef.pd,
+        mass: springRef.m,
+        stiffness: springRef.s,
+        damping: springRef.d,
+        velocity: springRef.v,
+        settlingDuration: springRef.settlingDuration,
       },
     };
   }

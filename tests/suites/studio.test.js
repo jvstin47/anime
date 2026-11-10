@@ -75,13 +75,26 @@ suite('Studio', () => {
     expect(entry).to.exist;
     const group = entry.groups[0];
 
-    // Shift offset to 200ms
+    // Shift offset to 200ms & test Undo/Redo
     studio.store.updateGroupOffset(entry.id, group.uid, 200);
     expect(entry.instance.duration).to.equal(700);
+    expect(studio.undo()).to.equal(true);
+    expect(entry.instance.duration).to.equal(500);
+    expect(studio.redo()).to.equal(true);
+    expect(entry.instance.duration).to.equal(700);
 
+    // Edit scalar property values live
+    studio.store.updateTweenValues(entry.id, [group.uid], 'x', { from: 0, to: 200 });
     // Seek to 450ms -> half-way through [200..700]
     studio.seek(450);
-    expect(target.x).to.be.closeTo(50, 0.5);
+    expect(target.x).to.be.closeTo(100, 0.5);
+
+    // Lock prevents offset mutations
+    const layer = entry.layers[0];
+    studio.store.toggleLayerLock(entry.id, layer.id);
+    studio.store.updateGroupOffset(entry.id, group.uid, 300);
+    expect(entry.instance.duration).to.equal(700);
+    studio.store.toggleLayerLock(entry.id, layer.id);
 
     // Step 1 frame at 50fps (+20ms -> 470ms)
     studio.stepFrame(1);
@@ -92,7 +105,7 @@ suite('Studio', () => {
       kind: 'bezier',
       bezier: [0.1, 0.9, 0.2, 1],
     }, true);
-    expect(target.x).to.be.above(50);
+    expect(target.x).to.be.above(100);
 
     // Live-apply spring
     studio.store.updateEasing(entry.id, group.uid, null, {
@@ -112,7 +125,7 @@ suite('Studio', () => {
     studio.dispose();
   });
 
-  test('showStudio mounts Shadow DOM <anime-studio> UI and hideStudio cleans up cleanly', () => {
+  test('showStudio mounts Shadow DOM <anime-studio> UI with Layers, Inspector, Timeline, and Export Modal', () => {
     const studio = showStudio({ mount: true });
     expect(getStudio()).to.equal(studio);
 
@@ -127,7 +140,19 @@ suite('Studio', () => {
     const bars = hostEl.shadowRoot.querySelectorAll('.bar-wrap');
     expect(bars.length).to.be.above(0);
 
-    // Switch inspector tab to Code
+    const layerRows = hostEl.shadowRoot.querySelectorAll('.layer-row');
+    expect(layerRows.length).to.be.above(0);
+
+    // Toggle layer visibility on DOM target
+    const visBtn = /** @type {HTMLElement} */(hostEl.shadowRoot.querySelector('[data-vis-layer]'));
+    visBtn.click();
+    expect(/** @type {HTMLElement} */(document.querySelector('#target-id')).style.visibility).to.equal('hidden');
+    const visBtn2 = /** @type {HTMLElement} */(hostEl.shadowRoot.querySelector('[data-vis-layer]'));
+    visBtn2.click();
+
+    // Open Export Modal and switch to Code tab
+    const exportBtn = /** @type {HTMLElement} */(hostEl.shadowRoot.querySelector('#btn-open-export'));
+    exportBtn.click();
     const codeTab = /** @type {HTMLElement} */(hostEl.shadowRoot.querySelector('[data-tab="code"]'));
     codeTab.click();
     const pre = hostEl.shadowRoot.querySelector('.code-block');

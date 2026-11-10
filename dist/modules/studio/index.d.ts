@@ -6,6 +6,10 @@ export class Studio {
     constructor(options?: StudioOptions);
     store: StudioStore;
     fps: number;
+    /** @type {'workspace'|'dock'} */
+    _mode: "workspace" | "dock";
+    _stageWidth: number;
+    _stageHeight: number;
     /** @type {AnimeStudioElement|null} */
     element: AnimeStudioElement | null;
     _keyHandler: (ev: any) => void;
@@ -17,15 +21,36 @@ export class Studio {
      * Mounts `<anime-studio>` Shadow DOM panel onto `container` (or `document.body`).
      *
      * @param  {HTMLElement} [container]
+     * @param  {HTMLElement} [stageElement]
      * @return {this}
      */
-    mount(container?: HTMLElement): this;
+    mount(container?: HTMLElement, stageElement?: HTMLElement): this;
     /**
      * Unmounts the `<anime-studio>` element from the DOM without destroying the store.
      *
      * @return {this}
      */
     unmount(): this;
+    /**
+     * Registers host scene switcher & Add-Object controls with the Studio shell.
+     *
+     * @param {{ scenes?: Array<SceneConfigOption>, activeSceneId?: String, onSelectScene?: (id: String) => void, onAddObject?: () => void }} config
+     * @return {this}
+     */
+    setSceneSupport(config: {
+        scenes?: Array<SceneConfigOption>;
+        activeSceneId?: string;
+        onSelectScene?: (id: string) => void;
+        onAddObject?: () => void;
+    }): this;
+    /** @param {any} target @return {Boolean} */
+    isTargetVisible(target: any): boolean;
+    /** @return {Boolean} */
+    undo(): boolean;
+    /** @return {Boolean} */
+    redo(): boolean;
+    /** @return {this} */
+    saveProject(): this;
     /**
      * Manually attaches an existing `Timeline` or `JSAnimation` to the Studio inspector.
      *
@@ -71,6 +96,13 @@ export class Studio {
      */
     stepFrame(deltaFrames?: number): this;
     /**
+     * Opens the Export / Code dialog (optionally selecting a tab `'video' | 'code'`).
+     *
+     * @param  {'video'|'code'} [tab='video']
+     * @return {this}
+     */
+    openExport(tab?: "video" | "code"): this;
+    /**
      * Generates runnable Anime.js v4 ESM code for the currently selected (or specified) entry.
      *
      * @param  {String} [entryId]
@@ -101,16 +133,35 @@ export function createStudio(options?: StudioOptions): Studio;
 export function showStudio(options?: StudioOptions): Studio;
 export function hideStudio(): void;
 export function getStudio(): Studio | null;
-export { StudioStore } from "./store.js";
 export type StudioOptions = {
     /**
      * - Automatically mount the Shadow DOM `<anime-studio>` panel in browsers
      */
     mount?: boolean;
     /**
+     * - Full-viewport NLE workspace or compact bottom dock
+     */
+    mode?: "workspace" | "dock";
+    /**
      * - Custom mount container (defaults to `document.body`)
      */
     container?: HTMLElement;
+    /**
+     * - Optional DOM/Canvas stage node to slot inside central workspace viewport
+     */
+    stageElement?: HTMLElement;
+    /**
+     * - Composition width for workspace viewport
+     */
+    stageWidth?: number;
+    /**
+     * - Composition height for workspace viewport
+     */
+    stageHeight?: number;
+    /**
+     * - Initial project title
+     */
+    projectName?: string;
     /**
      * - Connect `globals.editor` automatically to intercept new animations & timelines
      */
@@ -124,14 +175,16 @@ export type StudioOptions = {
      */
     virtualClock?: boolean;
     /**
-     * - Enable keyboard shortcuts (`Space`, `←`, `→`, `H`)
+     * - Enable keyboard shortcuts (`Space`, `←`, `→`, `Cmd/Ctrl+Z`, `Cmd/Ctrl+Shift+Z`)
      */
     shortcuts?: boolean;
 };
 import { StudioStore } from './store.js';
 import type { AnimeStudioElement } from './ui.js';
+import type { SceneConfigOption } from './store.js';
 import type { Timeline } from '../timeline/timeline.js';
 import type { JSAnimation } from '../animation/animation.js';
 import type { StudioEntry } from './store.js';
+export { StudioStore, classifyProperty } from "./store.js";
 export { generateAnimeCode, generateBlueprintJSON } from "./codegen.js";
 export { EASING_PRESETS, sampleEaseCurve, describeEasing, buildStudioEasing } from "./easings-bridge.js";

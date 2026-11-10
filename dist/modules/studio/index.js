@@ -9,6 +9,7 @@ import { isBrowser, doc, K } from '../core/consts.js';
 import { clamp } from '../core/helpers.js';
 import { engine } from '../engine/engine.js';
 import { StudioStore } from './store.js';
+export { classifyProperty } from './store.js';
 import { ensureStudioElementDefined } from './ui.js';
 import { generateAnimeCode, generateBlueprintJSON } from './codegen.js';
 export { EASING_PRESETS, buildStudioEasing, describeEasing, sampleEaseCurve } from './easings-bridge.js';
@@ -16,18 +17,23 @@ export { EASING_PRESETS, buildStudioEasing, describeEasing, sampleEaseCurve } fr
 /**
  * @import { Timeline } from '../timeline/timeline.js'
  * @import { JSAnimation } from '../animation/animation.js'
- * @import { StudioEntry } from './store.js'
+ * @import { StudioEntry, SceneConfigOption } from './store.js'
  * @import { AnimeStudioElement } from './ui.js'
  */
 
 /**
  * @typedef {Object} StudioOptions
  * @property {Boolean} [mount=true] - Automatically mount the Shadow DOM `<anime-studio>` panel in browsers
+ * @property {'workspace'|'dock'} [mode='dock'] - Full-viewport NLE workspace or compact bottom dock
  * @property {HTMLElement} [container] - Custom mount container (defaults to `document.body`)
+ * @property {HTMLElement} [stageElement] - Optional DOM/Canvas stage node to slot inside central workspace viewport
+ * @property {Number} [stageWidth=960] - Composition width for workspace viewport
+ * @property {Number} [stageHeight=540] - Composition height for workspace viewport
+ * @property {String} [projectName='Untitled Motion'] - Initial project title
  * @property {Boolean} [connect=true] - Connect `globals.editor` automatically to intercept new animations & timelines
  * @property {Number} [fps=60] - Default studio frame-stepping & render FPS
  * @property {Boolean} [virtualClock=false] - Start immediately in deterministic virtual clock mode
- * @property {Boolean} [shortcuts=true] - Enable keyboard shortcuts (`Space`, `←`, `→`, `H`)
+ * @property {Boolean} [shortcuts=true] - Enable keyboard shortcuts (`Space`, `←`, `→`, `Cmd/Ctrl+Z`, `Cmd/Ctrl+Shift+Z`)
  */
 
 /** @type {Studio|null} */
@@ -40,7 +46,14 @@ class Studio {
   /** @param {StudioOptions} [options] */
   constructor(options = {}) {
     this.store = new StudioStore();
+    if (options.projectName) {
+      this.store.projectName = options.projectName;
+    }
     this.fps = Math.max(1, options.fps || 60);
+    /** @type {'workspace'|'dock'} */
+    this._mode = options.mode === 'workspace' ? 'workspace' : 'dock';
+    this._stageWidth = options.stageWidth || 960;
+    this._stageHeight = options.stageHeight || 540;
     /** @type {AnimeStudioElement|null} */
     this.element = null;
     this._keyHandler = null;
@@ -54,7 +67,7 @@ class Studio {
       this.setVirtualClock(true);
     }
     if (options.mount !== false && isBrowser) {
-      this.mount(options.container);
+      this.mount(options.container, options.stageElement);
     }
     if (options.shortcuts !== false && isBrowser) {
       this._bindKeyboard();
@@ -66,9 +79,17 @@ class Studio {
     if (!doc) return;
     this._keyHandler = ev => {
       const target = /** @type {HTMLElement|null} */(ev.target);
-      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT')) {
+      const isEditable = target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT');
+
+      if ((ev.metaKey || ev.ctrlKey) && ev.key.toLowerCase() === 'z') {
+        ev.preventDefault();
+        if (ev.shiftKey) this.redo();
+        else this.undo();
         return;
       }
+
+      if (isEditable) return;
+
       if (ev.code === 'Space') {
         if (!this.store.getSelectedEntry()) return;
         ev.preventDefault();
@@ -90,18 +111,30 @@ class Studio {
    * Mounts `<anime-studio>` Shadow DOM panel onto `container` (or `document.body`).
    *
    * @param  {HTMLElement} [container]
+   * @param  {HTMLElement} [stageElement]
    * @return {this}
    */
-  mount(container) {
+  mount(container, stageElement) {
     if (!isBrowser || !doc || this.element) return this;
     ensureStudioElementDefined();
-    const host = /** @type {AnimeStudioElement} */(doc.createElement('anime-studio'));
-    const targetParent = container || doc.body || doc.documentElement;
-    if (targetParent) {
-      targetParent.appendChild(host);
-      host.bind(this.store, this);
-      this.element = host;
+    const existingEl = /** @type {AnimeStudioElement|null} */(doc.querySelector('anime-studio'));
+    const host = existingEl || /** @type {AnimeStudioElement} */(doc.createElement('anime-studio'));
+    if (stageElement) {
+      stageElement.setAttribute('slot', 'stage');
+      if (stageElement.parentNode !== host) {
+        host.appendChild(stageElement);
+      }
     }
+    if (!host.parentNode) {
+      const targetParent = container || doc.body || doc.documentElement;
+      if (targetParent) targetParent.appendChild(host);
+    }
+    host.bind(this.store, this, {
+      mode: this._mode,
+      stageWidth: this._stageWidth,
+      stageHeight: this._stageHeight,
+    });
+    this.element = host;
     return this;
   }
 
@@ -115,6 +148,38 @@ class Studio {
       this.element.parentNode.removeChild(this.element);
     }
     this.element = null;
+    return this;
+  }
+
+  /**
+   * Registers host scene switcher & Add-Object controls with the Studio shell.
+   *
+   * @param {{ scenes?: Array<SceneConfigOption>, activeSceneId?: String, onSelectScene?: (id: String) => void, onAddObject?: () => void }} config
+   * @return {this}
+   */
+  setSceneSupport(config) {
+    this.store.setSceneSupport(config);
+    return this;
+  }
+
+  /** @param {any} target @return {Boolean} */
+  isTargetVisible(target) {
+    return this.store.isTargetVisible(target);
+  }
+
+  /** @return {Boolean} */
+  undo() {
+    return this.store.undo();
+  }
+
+  /** @return {Boolean} */
+  redo() {
+    return this.store.redo();
+  }
+
+  /** @return {this} */
+  saveProject() {
+    this.store.markSaved(this.exportJSON());
     return this;
   }
 
@@ -138,8 +203,10 @@ class Studio {
   select(entryId) {
     if (this.store.entries.has(entryId)) {
       this.store.selectedEntryId = entryId;
+      this.store.selectedLayerId = null;
       this.store.selectedGroupUid = null;
       this.store.selectedTweenUid = null;
+      this.store.selectedProperty = null;
       this.store.emit();
     }
     return this;
@@ -243,6 +310,21 @@ class Studio {
   }
 
   /**
+   * Opens the Export / Code dialog (optionally selecting a tab `'video' | 'code'`).
+   *
+   * @param  {'video'|'code'} [tab='video']
+   * @return {this}
+   */
+  openExport(tab = 'video') {
+    if (this.element) {
+      this.element._exportOpen = true;
+      this.element._exportTab = tab;
+      this.element.render();
+    }
+    return this;
+  }
+
+  /**
    * Generates runnable Anime.js v4 ESM code for the currently selected (or specified) entry.
    *
    * @param  {String} [entryId]
@@ -316,7 +398,7 @@ const createStudio = options => {
 const showStudio = (options = {}) => {
   if (activeStudio && !activeStudio._disposed) {
     if (!activeStudio.element && options.mount !== false && isBrowser) {
-      activeStudio.mount(options.container);
+      activeStudio.mount(options.container, options.stageElement);
     }
     return activeStudio;
   }

@@ -76,6 +76,7 @@ exports.linear = index$6.linear;
 exports.irregular = index$7.irregular;
 exports.Spring = index$8.Spring;
 exports.createSpring = index$8.createSpring;
+exports.getSpringFromEase = index$8.getSpringFromEase;
 exports.spring = index$8.spring;
 exports.eases = parser.eases;
 exports.addChild = helpers.addChild;

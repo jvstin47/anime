@@ -9,7 +9,7 @@ import { minValue } from '../core/consts.js';
 import { isUnd, round, isFnc, isStr, clamp, forEachChildren } from '../core/helpers.js';
 import { parseEase } from '../easings/eases/parser.js';
 import { getCubicBezierParams, cubicBezier } from '../easings/cubic-bezier/index.js';
-import { Spring, createSpring } from '../easings/spring/index.js';
+import { Spring, getSpringFromEase, createSpring } from '../easings/spring/index.js';
 import { none } from '../easings/none.js';
 
 /**
@@ -93,20 +93,23 @@ const parseCubicBezierString = str => {
  * @return {EasingDescriptor}
  */
 const describeEasing = (rawEase, compiledEase) => {
-  if (rawEase && !isUnd(rawEase.ease) && (rawEase instanceof Spring || !isUnd(rawEase.settlingDuration))) {
-    const sp = /** @type {Spring} */(rawEase);
+  const springRef = (rawEase && !isUnd(rawEase.ease) && (rawEase instanceof Spring || !isUnd(rawEase.settlingDuration)))
+    ? /** @type {Spring} */(rawEase)
+    : getSpringFromEase(compiledEase);
+
+  if (springRef) {
     return {
       kind: 'spring',
-      label: `createSpring({ bounce: ${round(sp.bn, 2)}, duration: ${round(sp.pd, 0)} })`,
-      fn: sp.ease,
+      label: `createSpring({ bounce: ${round(springRef.bn, 2)}, duration: ${round(springRef.pd, 0)} })`,
+      fn: springRef.ease,
       spring: {
-        bounce: sp.bn,
-        duration: sp.pd,
-        mass: sp.m,
-        stiffness: sp.s,
-        damping: sp.d,
-        velocity: sp.v,
-        settlingDuration: sp.settlingDuration,
+        bounce: springRef.bn,
+        duration: springRef.pd,
+        mass: springRef.m,
+        stiffness: springRef.s,
+        damping: springRef.d,
+        velocity: springRef.v,
+        settlingDuration: springRef.settlingDuration,
       },
     };
   }

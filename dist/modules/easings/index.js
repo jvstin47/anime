@@ -9,5 +9,5 @@ export { cubicBezier, getCubicBezierParams } from './cubic-bezier/index.js';
 export { steps } from './steps/index.js';
 export { linear } from './linear/index.js';
 export { irregular } from './irregular/index.js';
-export { Spring, createSpring, spring } from './spring/index.js';
+export { Spring, createSpring, getSpringFromEase, spring } from './spring/index.js';
 export { eases } from './eases/parser.js';

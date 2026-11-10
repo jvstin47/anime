@@ -23,5 +23,6 @@ exports.linear = index$2.linear;
 exports.irregular = index$3.irregular;
 exports.Spring = index$4.Spring;
 exports.createSpring = index$4.createSpring;
+exports.getSpringFromEase = index$4.getSpringFromEase;
 exports.spring = index$4.spring;
 exports.eases = parser.eases;

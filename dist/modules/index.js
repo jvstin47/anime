@@ -28,7 +28,7 @@ export { cubicBezier, getCubicBezierParams } from './easings/cubic-bezier/index.
 export { steps } from './easings/steps/index.js';
 export { linear } from './easings/linear/index.js';
 export { irregular } from './easings/irregular/index.js';
-export { Spring, createSpring, spring } from './easings/spring/index.js';
+export { Spring, createSpring, getSpringFromEase, spring } from './easings/spring/index.js';
 export { eases } from './easings/eases/parser.js';
 export { addChild, forEachChildren, removeChild } from './core/helpers.js';
 export { clamp, damp, degToRad, lerp, mapRange, padEnd, padStart, radToDeg, round, roundPad, snap, wrap } from './utils/chainable.js';

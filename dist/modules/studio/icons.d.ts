@@ -1,0 +1,34 @@
+export namespace ICONS {
+    export let logo: string;
+    export let undo: string;
+    export let redo: string;
+    export let save: string;
+    let _export: string;
+    export { _export as export };
+    export let play: string;
+    export let pause: string;
+    export let toStart: string;
+    export let stepBack: string;
+    export let stepFwd: string;
+    export let reverse: string;
+    export let loop: string;
+    export let eye: string;
+    export let eyeOff: string;
+    export let lock: string;
+    export let unlock: string;
+    export let chevronRight: string;
+    export let chevronDown: string;
+    export let plus: string;
+    export let layers: string;
+    export let group: string;
+    export let fit: string;
+    export let grid: string;
+    export let hand: string;
+    export let crosshair: string;
+    export let panelLeft: string;
+    export let panelRight: string;
+    export let clock: string;
+    export let close: string;
+    export let zoomOut: string;
+    export let zoomIn: string;
+}

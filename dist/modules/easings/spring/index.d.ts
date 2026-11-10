@@ -1,3 +1,4 @@
+export function getSpringFromEase(easeFn: EasingFunction | any): Spring | null;
 export class Spring {
     /**
      * @param {SpringParams} [parameters]
@@ -47,7 +48,7 @@ export class Spring {
 }
 export function spring(parameters?: SpringParams): Spring;
 export function createSpring(parameters?: SpringParams): Spring;
+import type { EasingFunction } from '../../types/index.js';
 import type { JSAnimation } from '../../animation/animation.js';
 import type { Callback } from '../../types/index.js';
-import type { EasingFunction } from '../../types/index.js';
 import type { SpringParams } from '../../types/index.js';
